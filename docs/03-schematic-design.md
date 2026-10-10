@@ -181,14 +181,21 @@ Per phase (U, V, W):
 - 2× MCP6292 (4 channels, 1 spare).
 
 ### 4.7 DC-bus voltage (ADAPT, pending confirmation)
-CN2 pin 18 (TLE2022A output on the gate board, 12 V-powered — could swing to ~10 V)
-→ divider (values TBD once the transfer function is known) → BAT54S clamp to
-3.3 V/GND → 3k3 + 1 nF (REUSE) → UDC/PC3. Firmware `udcgain` sets the scale.
-CN2 pin 20 → test point only until identified.
+Assumed: **CN2 pin 18 = DC-bus voltage** (TLE2022A output on the gate board, powered
+from the 12 V gate rail, so it can't exceed ~13 V even on a 14 V battery).
+`CN2 18 → 33 kΩ / 10 kΩ divider → BAT54S clamp to 3.3 V/GND → 3k3 + 1 nF (REUSE) →
+UDC/PC3`. 13 V → 3.0 V at the ADC, so the full possible swing is safe. If the real
+range is 0–5 V, that still leaves ~1,400 counts of range — adequate for bus
+monitoring; the divider can be retuned once the range is known.
+**Needed before HV operation:** the transfer function (pin-18 volts per bus volt) to set
+firmware `udcgain`. Bench method: OEM logic + gate boards on 12 V, a current-limited
+supply on the DC link at 0/12/24/48 V, record pin 18.
+**CN2 pin 20** (TLE2022A ch-A input): the OEM held it at ~0 V → 10 kΩ to GND + test
+point (DNP-able).
 
 ### 4.8 Position sensor front end (NEW) — software resolver, encoder by assembly option
 
-**Decision:** firmware-native **RESOLVER** mode (exciter square wave on PD2, sin/cos
+**Decision (confirmed by owner):** firmware-native **RESOLVER** mode (exciter square wave on PD2, sin/cos
 sampled on PA6/PA7). It needs no extra silicon in the signal path, and the same input
 amplifiers also serve **SINCOS** Hall encoders. Incremental **AB(Z) encoders** use the
 same MCU pins via 0 Ω assembly options. (Alternative kept on file: an AD2S1205 RDC,
@@ -220,8 +227,8 @@ gain set by resistors, output biased at 1.65 V (buffered divider from +3V3) →
 | | Y1 | NTC V | CN2 19 | 4.7 kΩ to +3V3, 1 µF |
 | | Y2 | NTC W | CN2 21 | 4.7 kΩ to +3V3, 1 µF |
 | | Y3 | GND | — | |
-| 1 → TMPM (PC2) | Y0 | motor temp | CN1 J1 (J2 = GND) | **TBD** (sensor type) |
-| | Y1 | aux temp | CN1 H1 (H2 = GND) | TBD |
+| 1 → TMPM (PC2) | Y0 | motor temp | CN1 J1 (J2 = GND) | **2.2 kΩ to +3V3 default** (own footprint; sensor type unknown) |
+| | Y1 | aux temp | aux header (4.13) | 2.2 kΩ to +3V3 |
 | | Y2, Y3 | spare | | |
 
 Pulling up to 3.3 V (not the V6's 5 V) keeps an open or cold NTC within the ADC
@@ -241,6 +248,12 @@ precharge, **PUMP_OUT (PB9) → pump/fan (new 3rd channel)**.
 SN65HVD234 at 3.3 V on PA11/PA12, 120 Ω termination (0 Ω link to make it optional).
 ESP32-WROOM-32 on PB10/PB11 with its 6-pin programming header. SWD 3-pin header.
 
+### 4.13 Auxiliary I/O header (NEW)
+On-board 2×6, 2.54 mm header for I/O that doesn't fit CN1 without using reserved OEM
+positions: AUX_TEMP (mux 1Y1, 2.2 k pull-up), EMCYSTOP_IN, MPROT_IN, BMS_IN
+(12 V-tolerant, same 4k7/1k5 dividers as the other inputs), VTG_OUT (3.3 V logic,
+spare), +5V (polyfused), +12V (switched VBAT, polyfused), GND ×3, plus 2 spare.
+
 ## 5. CN2 (internal, to gate board) net assignment
 
 Part: Samtec SSW-120-01-T-D-LL (2×20, 2.54 mm socket strip, back side).
@@ -254,12 +267,14 @@ Part: Samtec SSW-120-01-T-D-LL (2×20, 2.54 mm socket strip, back side).
 | 24 / 27 / 26 | ISNS_U / ISNS_V / ISNS_W | | 28, 29 | +5V_A |
 | 31, 33, 35, 37 | +12V_GATE | | 36, 38 | IGN_SENSE (124 k from IGN) |
 
-## 6. CN1 (vehicle) pin assignment — proposal for review
+## 6. CN1 (vehicle) pin assignment — approved principle
 
-Principle: keep every OEM function a conversion still uses in its **OEM position**
-(power, ignition, resolver, motor temp, CAN, HVIL), so a Bolt drive-unit harness
-mates directly. Put conversion I/O on the 12 unused positions and on Bolt-only
-positions (transmission range switch, trans fluid temp, aux pump).
+Keep every OEM function a conversion uses in its **OEM position** (power, ignition,
+resolver, motor temp, CAN, HVIL) so a Bolt drive-unit harness mates directly.
+**Reserve (leave unconnected) every remaining OEM-only position** for a future
+OEM-compatible revision — aux pump, transmission fluid temp, the second/third CAN
+buses, IMS supplies, wake. Conversion I/O uses the 12 unused positions plus the
+transmission-range-switch positions.
 
 | Pos | OEM function | Bolt-board function |
 |----|----|----|
@@ -270,20 +285,21 @@ positions (transmission range switch, trans fluid temp, aux pump).
 | C2 / C1 | Position sensor 1 / 3 | **SIN+ / SIN−** (OEM) |
 | D2 / D1 | Position sensor 2 / 4 | **COS+ / COS−** (OEM) |
 | J1 / J2 | Motor temp signal / ref | **Motor temp** (OEM) |
-| E4 / E3 (F4 / F3) | HS-GMLAN 1 +/− (daisy) | **CAN H / L** (OEM, both pairs) |
+| E4 / E3, F4 / F3 | HS-GMLAN 1 +/− (daisy chain) | **CAN H / L** (OEM, both pairs) |
 | G2 / G1 | HVIL signal / ref | **HVIL** (OEM) |
 | B4, C3, C4, D3, D4 | Trans range switch A/B/P/C/S | **FWD, REV, BRAKE, START, CRUISE** |
-| F1 | Aux pump relay control | **PUMP/FAN out** |
-| F2 | Aux pump feedback | **BMS / spare digital in** |
-| H1 / H2 | Trans fluid temp | **Aux temp** |
 | A1, A2 | — | **THROTTLE1, THROTTLE2** |
 | A3, A4 | — | **Pedal 5 V, pedal GND** |
-| E1, E2 | — | **MAIN CONTACTOR out, PRECHARGE out** |
+| E1, E2, B3 | — | **MAIN CONTACTOR, PRECHARGE, PUMP/FAN** (low-side outputs) |
 | K1, K3, K4 | — | **ENC_A, ENC_B, ENC_Z** (encoder option) |
 | L2, M3 | — | **Encoder 5 V, encoder GND** |
-| B3 | — | spare (EMCYSTOP in) |
-| G3/G4, H3/H4, J3/J4 | HS-GMLAN 3 & 2 | NC (single CAN on F103) |
-| L1, L4, M2 | IMS supplies, wake | NC |
+| F1, F2 | Aux pump control / feedback | **reserved — NC** |
+| H1, H2 | Trans fluid temp | **reserved — NC** |
+| G3/G4, H3/H4, J3/J4 | HS-GMLAN 3 and 2 | **reserved — NC** |
+| L1, L4, M2 | IMS supplies, accessory wake | **reserved — NC** |
+
+If a future revision also needs the stock range switch, the five drive inputs move to
+the aux header (4.13).
 
 ## 7. Firmware changes (stm32-sine fork) implied by this design
 
@@ -299,10 +315,11 @@ positions (transmission range switch, trans fluid temp, aux pump).
 
 ## 8. Open questions
 
-1. **Bolt motor temperature sensor** — type and resistance at room temperature (sets
-   the pull-up and curve). Same for the trans-fluid-temp position if used.
-2. **CN2 pin 18** — confirm DC-bus voltage and its transfer function (trace the
-   TLE2022A input divider, or a powered injection test on pin 20 / measure 18).
-3. **CN1 pinout (section 6)** — approve the OEM-preserving layout or adjust.
-4. **Resolver approach** — software resolver (chosen) vs. AD2S1205 RDC.
-5. Parts still to select: Q1/Q2 high-side switches, exciter power amplifier, polyfuse.
+| # | Item | Status |
+|----|----|----|
+| 1 | CN1 pinout | **resolved** — section 6 (OEM-only positions reserved) |
+| 2 | Bolt motor temp sensor type | open — 2.2 k default pull-up, own footprint |
+| 3 | CN2 pin 18 | **assumed DC-bus**; transfer function needed before HV (bench test) |
+| 4 | Resolver approach | **resolved** — software resolver |
+| 5 | Parts to select: Q1/Q2 high-side switches, exciter power amp, polyfuses | open |
+| 6 | CN2 insulator height vs. OEM | open |
