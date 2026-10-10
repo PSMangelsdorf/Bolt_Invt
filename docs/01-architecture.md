@@ -122,20 +122,27 @@ TIM1 PWM core, BKIN fault path, contactor/precharge/pump low-side drivers (BTS13
 6. **No gate-enable line** — power-up sequencing parks all PWM off (TIM1 break
    asserted) until rails are up and firmware releases; rely on 1ED020I12 UVLO.
 
-## Current-sense scaling (method — needs sensor datasheet number)
+## Current-sense scaling (finalized)
 
-HC5FW700-S/SP3 is ratiometric: `Vout = Vcc/2 + S·I`, with sensitivity `S` (V/A) that
-scales with Vcc. The sensor's 0–5 V output must be scaled by `k` into the 0–3.3 V ADC
-window, centered so 0 A sits mid-scale. With a divider/op-amp gain `k` (≈2/3 for a
-simple divider: 2.5 V→1.65 V center, ±2.5 V→±1.65 V):
+HC5FW700-S/SP3 is ratiometric: `Vout = Vcc/2 + S·I`.
+- **Sensitivity S = 2.86 mV/A** (from datasheet), 0 A = Vcc/2 = 2.5 V.
+- Over ±700 A the output swings ±2.0 V → **~0.5–4.5 V range**. This is larger than the
+  0–3.3 V ADC window, so the Bolt sensor is **attenuated, not amplified** (opposite of
+  the V6's gain stage — reconfigure the op-amp as an attenuating buffer).
+
+Front end: attenuate by **k ≈ 2/3** (e.g. 10 k / 20 k divider into an op-amp buffer).
+Maps 0.5–4.5 V → ~0.33–2.97 V at the ADC; 2.5 V (0 A) → ~1.67 V, near mid-scale.
 
 ```
-il_gain [digits/A] = S · k · (4096 / 3.3)
+il_gain = S · k · (4096 / 3.3) = 0.00286 × 0.667 × 1241 ≈ 2.37 digits/A
 ```
 
-Action: pull `S` from the HC5FW700-S/SP3 datasheet to finalize `k` (front-end
-divider/gain) and the default `il1gain`/`il2gain`. Tie the ADC reference to the
-pin-28 analog-5 V rail so the ratiometric cancellation holds.
+- HW_BOLT default **`il1gain`/`il2gain` ≈ 2.37** (sign set at commissioning).
+- Resolution ≈ 0.42 A/count across ±700 A (sensor-limited).
+- **Reference note:** true ratiometric cancellation is NOT achievable here — the STM32
+  ADC reference is 3.3 V VDDA and does not track the 5 V sensor rail. Instead: regulate
+  the analog 5 V tightly; OpenInverter auto-calibrates the zero-current offset at
+  startup (handles the 2.5 V center); gain drift vs. 5 V is second-order.
 
 ## Firmware change list (stm32-sine fork)
 
