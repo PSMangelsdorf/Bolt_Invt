@@ -1,84 +1,87 @@
-# Bolt Logic Board — Mechanical Definition (draft v0.1)
+# Bolt Logic Board — Mechanical Definition (v0.2)
 
 Sources: owner's caliper/ruler measurements, cross-checked against two ruler-referenced
 photos (component side and connector side). Each photo was perspective-corrected by
-fitting the four straight body edges (fit residual ≤ 0.16 mm RMS) and solving a
-homography onto the measured 278 × 112 mm body. The two photos agree with each other on
-every hole to within ~0.5 mm. Overlay check: `mechanical_overlay.png`.
+fitting the four straight body edges (≤ 0.16 mm RMS) and solving a homography onto the
+278 × 112 mm body; the two photos agree on every hole to within ~0.5 mm. Disputed values
+were re-checked with calipers by the owner and are now confirmed.
 
-**Status:** photo-derived values are ±0.5 mm. Items marked **VERIFY** must be confirmed
-with calipers before the outline and footprints are frozen.
+The KiCad board is generated from this data by
+`hardware/bolt_logic/tools/gen_mech.py` (single source of truth). The generator asserts
+all 102 pad positions against the table; KiCad DRC reports 0 violations.
+Visual check of the KiCad file against the real board: `mechanical_overlay.png`.
 
 ## Coordinate system
 
-- Viewed from the **component side** (the side opposite CN2's housing).
-- External connector tab on the **left**.
-- **Origin = center of the bottom-left 4 mm mounting hole.** +X right, +Y up.
-- KiCad uses +Y down; the generator will flip Y.
+- Viewed from the **component side** (opposite CN2's housing), external connector tab on
+  the **left**.
+- **Origin = centre of the bottom-left 4 mm mounting hole (H1).** +X right, +Y up, mm.
+- In KiCad, the auxiliary (drill/place) origin and grid origin are set on H1; KiCad's +Y
+  is down.
 - All mounting holes sit 5.0 mm in from the adjacent body edges.
 
 ## Board
 
-| Item | Value | Notes |
+| Item | Value | Status |
 |----|----|----|
-| Material / thickness | FR-4, **2.0 mm** | confirmed |
-| Body | 278.0 × 112.0 mm, corners at (−5, −5) and (273, 107) | confirmed (caliper + both photos) |
-| Connector tab (left) | x −16.1 … −5, y 33 … 85 (11.1 deep × 52 wide) | **VERIFY depth** — measured 1 mm by caliper, 11.1 mm in both photos |
-| Notch (bottom edge) | R7 semicircle, center (121.6, −5) | photo, both agree |
-| Chamfer (top-right) | (253.4, 107) → (273, 67.7) — 19.6 × 39.3 mm | photo, both agree |
-| Silkscreen legend | "290.5 × 133" | width doesn't match this board (112) — treat as unreliable |
+| Material / thickness | FR-4, 2.0 mm | confirmed |
+| Body | 278.0 × 112.0, corners (−5, −5) … (273, 107) | confirmed |
+| Connector tab (left) | x −16 … −5, y 33 … 85 (11 deep × 52 wide) | confirmed |
+| Notch (bottom edge) | R7 semicircle, centre (121.6, −5) | photo (both agree) |
+| Chamfer (top-right) | (253.4, 107) → (273, 67.7) | photo (both agree) |
+| Corner radii | modelled sharp | minor, optional to measure |
+| Silkscreen legend "290.5 × 133" | does not match this board's width | ignore |
 
 ## Holes
 
-| # | x | y | Ø | Type | Status |
+| Ref | x | y | Ø | Type | Status |
 |----|----|----|----|----|----|
-| 1 | 0 | 0 | 4.0 | plated, origin | confirmed |
-| 2 | 0 | 102 | 4.0 | plated | confirmed |
-| 3 | **61** | **71.7** | 4.0 | plated | **VERIFY** — listed as (70, 61); photos show (61, 71.7), likely swapped |
-| 4 | 134 | 102 | 4.0 | plated | confirmed |
-| 5 | 141 | 0 | 4.0 | plated | confirmed |
-| 6 | 188 | 14 | 4.0 | plated | confirmed |
-| 7 | 188 | 67 | 4.0 | plated | confirmed (photos 66.3) |
-| 8 | 241 | 14 | 4.0 | plated | confirmed |
-| 9 | 241 | 67 | 4.0 | plated | confirmed (photos 66.5) |
-| 10 | 248 | 102 | 4.0 | plated | confirmed |
-| 11 | 268 | 0 | 4.0 | plated | confirmed |
-| 12 | 268 | 50 | 4.0 | plated | minor: photos read 51.0 |
-| 13 | 39 | 0 | 4.5 | non-plated (back) | confirmed; photos 39.6. Sits by CN2 → likely board-to-board alignment |
-| 14 | **≈231** | **≈101** | 4.5 | non-plated | **VERIFY** — listed as (251, 49); no hole there (QR label). Photo shows a plain hole at ≈(231, 101) |
-| 15 | −8.6 | 39.5 | 3.0 | locating, ext. connector | confirmed (7.5 from tab edge, 38 apart) |
-| 16 | −8.6 | 77.5 | 3.0 | locating, ext. connector | confirmed |
+| H1 | 0 | 0 | 4.0 | plated (origin) | confirmed |
+| H2 | 0 | 102 | 4.0 | plated | confirmed |
+| H3 | 61 | 71.7 | 4.0 | plated | confirmed (was listed as 70, 61) |
+| H4 | 134 | 102 | 4.0 | plated | confirmed |
+| H5 | 141 | 0 | 4.0 | plated | confirmed |
+| H6 | 188 | 14 | 4.0 | plated | confirmed |
+| H7 | 188 | 67 | 4.0 | plated | confirmed |
+| H8 | 241 | 14 | 4.0 | plated | confirmed |
+| H9 | 241 | 67 | 4.0 | plated | confirmed |
+| H10 | 248 | 102 | 4.0 | plated | confirmed |
+| H11 | 268 | 0 | 4.0 | plated | confirmed |
+| H12 | 268 | 50 | 4.0 | plated | confirmed (photos read 51.0) |
+| H13 | 39 | 0 | 4.5 | non-plated, beside CN2 | confirmed (photos 39.6) |
+| H14 | 231 | 101 | 4.5 | non-plated | confirmed (was listed as 251, 49) |
+| CN1 locating | −8.5 | 39.5 / 77.5 | 3.0 | non-plated, in CN1 footprint | confirmed |
 
-## CN2 — internal 40-pin board-to-board connector
+Plated pads modelled at 6.5 mm OD (photo ring OD 6.5–6.8). Net assignment (GND /
+chassis / floating) to be decided in the schematic.
 
-| Item | Value |
-|----|----|
-| Arrangement | 2 × 20, rows parallel to X |
-| Pitch / row spacing | **2.54 mm** (0.1") — photo 2.551 over 19 pitches; 2.50 would be 0.76 mm off by pin 20 — **VERIFY** |
-| Pin 1 | (47.7, 15.8) — silkscreen "1"; odd pins on upper row (y 15.8), even on lower (y 13.3) |
-| Pin 39 / 40 | (−0.5, 15.8) / (−0.5, 13.3) |
-| Housing | female receptacle on the **back** side (bottom layer); marking "S" with bars |
-| Open | mating part number, **stack height** to gate board |
+## CN2 — internal 2×20 board-to-board receptacle (back side)
 
-## J1 — external 48-way connector (GM X1, mates 98993-5021 / 19354859)
+| Item | Value | Status |
+|----|----|----|
+| Arrangement | 2 × 20, rows parallel to X | confirmed |
+| Pitch / row spacing | 2.54 mm (pin 1 → pin 39 = 48.26) | confirmed |
+| Pin 1 | (47.73, 15.82); odd pins upper row, even pins lower row (y 13.28) | confirmed; matches Phase 1 numbering |
+| Pin 39 / 40 | (−0.53, 15.82) / (−0.53, 13.28) | |
+| Mounting | female receptacle, body on the back side; the gate board's pins set the stack | confirmed |
+| Pads | Ø1.0 drill / 1.7 pad (standard 0.64 mm square pin) | |
+| Open | receptacle part ("S" logo) and body height, so ours engages the gate-board pins identically | **open** |
 
-| Item | Value |
-|----|----|
-| Arrangement | 4 columns (along X) × 12 rows A–M (no I), rows along Y |
-| Column x | −11.7, −7.7, −3.7, +0.3 (pitch **4.0**; first column 4.5 from tab edge) |
-| Row y | M 73.3, L 69.6, K 66.1, J 63.6, then 2.50 pitch down to A 43.6 |
-| Locating holes | #15, #16 (3 mm), symmetric about the pin field |
-| Open | which end is column 1 (read M1/M4 silkscreen); connector part ("JXI 2", "366380002") |
+## CN1 — external GM 48-way header (mates 98993-5021 / service 19354859)
 
-Caliper readings of 3.5 / 3.0 / 2.0 mm match the photo center-to-center pitches
-(4.0 / 3.7 / 2.5) minus about one hole diameter — consistent with edge-to-edge gaps.
+| Item | Value | Status |
+|----|----|----|
+| Arrangement | 4 columns × 12 rows A–M (no I); pad names A1 … M4 | confirmed |
+| Orientation | **M1 top-right** (highest x, y), M4 top-left; column 1 at x = 0.3 | confirmed |
+| Column x | col 1 = 0.3, col 2 = −3.7, col 3 = −7.7, col 4 = −11.7 (4.0 pitch) | photo |
+| Row y | M 73.25, L 69.55, K 66.10, J 63.55, then 2.50 pitch to A 43.55 | photo (±0.3) |
+| Locating holes | 3.0 mm at (−8.5, 39.5) and (−8.5, 77.5) | confirmed |
+| Pads | Ø1.0 drill / 1.7 pad placeholder | **open** — confirm from part datasheet |
+| Open | header part ("JXI 2", "366380002"), terminal hole sizes (rows M/L may differ) | **open** |
 
-## Verification checklist (calipers)
+## Remaining open items
 
-1. Tab depth (outer tab edge to body edge): expect ~11.1 mm.
-2. Hole #3 center: expect (61, 71.7).
-3. Second 4.5 mm hole: expect ≈(231, 101).
-4. CN2: pin 1 to pin 39 center-to-center — 48.26 mm (2.54) vs 47.50 (2.50); pin 1 position.
-5. J1: column 1 to column 4 = 12.0 mm; row J to row A = 20.0 mm; which corner is M1.
-6. Board-to-board stack height (logic board to gate board).
-7. Optional: hole #12 y (50 vs 51), hole #13 x (39 vs 39.6).
+1. CN2 receptacle part number / body height.
+2. CN1 header part number and hole diameters.
+3. Mounting-hole net assignment (schematic decision).
+4. Optional: corner radii.
