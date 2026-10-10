@@ -51,7 +51,7 @@ NPTH_HOLES = [  # ref, x, y, drill
 
 # CN2: internal 2x20 receptacle, 2.54 mm, body on the BACK side.
 CN2 = dict(pin1=(47.73, 15.82), pitch=2.54, row=2.54, n_per_row=20,
-           drill=1.0, pad=1.7)
+           drill=1.02, pad=1.7)             # Samtec SSW-120-01-T-D-LL (0.64 mm sq. tails)
 # odd pins on the upper row (pin1 y), even pins one row below; numbers grow toward -X
 
 # CN1: external GM 48-way (rows A..M without I, columns 1..4). M1 = top right.
@@ -174,7 +174,7 @@ def fp_cn2(board):
     the back side. Local x is pre-mirrored so absolute pad positions survive the
     left/right flip."""
     c = CN2
-    fp = new_fp(board, "CN2_2x20_P2.54_Receptacle_Back", "CN2", "B2B 2x20 2.54mm")
+    fp = new_fp(board, "CN2_2x20_P2.54_Receptacle_Back", "CN2", "SSW-120-01-T-D-LL")
     for k in range(c["n_per_row"]):
         dx = -c["pitch"] * k                      # design frame: toward -X
         for j, dy in enumerate((0.0, -c["row"])): # odd row at pin1, even row below

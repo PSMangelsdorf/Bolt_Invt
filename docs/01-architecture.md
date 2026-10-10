@@ -26,7 +26,7 @@ The HW_TESLA variant already implements three things the Bolt needs (verified in
 | Need | V6 / HW_TESLA mechanism | Source |
 |----|----|----|
 | 3 module NTCs, 1 ADC | PC8 repurposed as 74HCT4052 mux select (`temp1_out`/`bms_in`) | `hwinit.cpp` io_setup HW_TESLA case |
-| Resolver decode | TIM3 exciter + TIM3_CC4-triggered injected ADC sampling of sin/cos | `inc_encoder.cpp`, `ADC_CR2_JEXTSEL_TIM3_CC4` |
+| Resolver decode | **firmware only** — TIM3_CC4-triggered ADC sampling of sin/cos on PA6/PA7, exciter on PD2. The V6 *hardware* is encoder-only; the resolver front end is new (see 03-schematic-design.md) | `inc_encoder.cpp` |
 | 6-PWM + HW fault trip | TIM1 CH1-3 + CH1N-3N, break input on PB12 | `hwdefs.h` PWM_TIMER=TIM1, `digio_prj.h` bk_in=PB12 |
 | Board detection | `detect_hw()` pin-state tree + variant resistor on ADC ch15/PC5 | `hwinit.cpp` |
 | Current scaling | runtime `il1gain`/`il2gain` params | `param_prj.h` |
@@ -104,8 +104,8 @@ PB15=CH3N (low side). Break = PB12.
 
 ## Functional blocks: reuse vs. change from V6
 
-**Reuse largely as-is:** power tree (RT8259 buck, LD1117 3.3 V, LM2664 negative rail
-for op-amps), CAN (SN65HVD230), ESP32 WiFi web UI, resolver front end, temp mux,
+**Reuse largely as-is:** power tree (RT8259 buck, LD1117 3.3 V; the LM2664 −5 V is
+dropped), CAN (SN65HVD234), ESP32 WiFi web UI, temp mux,
 TIM1 PWM core, BKIN fault path, contactor/precharge/pump low-side drivers (BTS133).
 
 **Change for the Bolt:**
@@ -130,15 +130,15 @@ HC5FW700-S/SP3 is ratiometric: `Vout = Vcc/2 + S·I`.
   0–3.3 V ADC window, so the Bolt sensor is **attenuated, not amplified** (opposite of
   the V6's gain stage — reconfigure the op-amp as an attenuating buffer).
 
-Front end: attenuate by **k ≈ 2/3** (e.g. 10 k / 20 k divider into an op-amp buffer).
-Maps 0.5–4.5 V → ~0.33–2.97 V at the ADC; 2.5 V (0 A) → ~1.67 V, near mid-scale.
+Front end: attenuate by **k = 0.635** (the V6's 2k7 / 4k7 divider after an op-amp buffer).
+Maps 0.5–4.5 V → 0.32–2.86 V at the ADC; 2.5 V (0 A) → 1.59 V, near mid-scale.
 
 ```
-il_gain = S · k · (4096 / 3.3) = 0.00286 × 0.667 × 1241 ≈ 2.37 digits/A
+il_gain = S · k · (4096 / 3.3) = 0.00286 × 0.635 × 1241 ≈ 2.25 digits/A
 ```
 
-- HW_BOLT default **`il1gain`/`il2gain` ≈ 2.37** (sign set at commissioning).
-- Resolution ≈ 0.42 A/count across ±700 A (sensor-limited).
+- HW_BOLT default **`il1gain`/`il2gain` ≈ 2.25** (sign set at commissioning).
+- Resolution ≈ 0.44 A/count across ±700 A (sensor-limited).
 - **Reference note:** true ratiometric cancellation is NOT achievable here — the STM32
   ADC reference is 3.3 V VDDA and does not track the 5 V sensor rail. Instead: regulate
   the analog 5 V tightly; OpenInverter auto-calibrates the zero-current offset at

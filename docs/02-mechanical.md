@@ -64,8 +64,9 @@ chassis / floating) to be decided in the schematic.
 | Pin 1 | (47.73, 15.82); odd pins upper row, even pins lower row (y 13.28) | confirmed; matches Phase 1 numbering |
 | Pin 39 / 40 | (−0.53, 15.82) / (−0.53, 13.28) | |
 | Mounting | female receptacle, body on the back side; the gate board's pins set the stack | confirmed |
-| Pads | Ø1.0 drill / 1.7 pad (standard 0.64 mm square pin) | |
-| Open | receptacle part ("S" logo) and body height, so ours engages the gate-board pins identically | **open** |
+| Part | **Samtec SSW-120-01-T-D-LL** (owner-identified; Samtec logo on the housing): 2×20 socket strip, 2.54 mm, -01 tail 2.64 mm, "-LL" = locking leads, mates TSW-style 0.64 mm posts, 5.7 A/pin | identified |
+| Pads | Ø1.02 drill / 1.7 pad (0.64 mm square tails) | |
+| Open | confirm insulator height against the OEM part (measure, or Samtec drawing) | open |
 
 ## CN1 — external GM 48-way header (mates 98993-5021 / service 19354859)
 
@@ -81,7 +82,7 @@ chassis / floating) to be decided in the schematic.
 
 ## Remaining open items
 
-1. CN2 receptacle part number / body height.
+1. CN2 insulator height check (part identified: Samtec SSW-120-01-T-D-LL).
 2. CN1 header part number and hole diameters.
 3. Mounting-hole net assignment (schematic decision).
 4. Optional: corner radii.
