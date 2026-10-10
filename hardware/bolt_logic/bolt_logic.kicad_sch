@@ -1,0 +1,175 @@
+(kicad_sch
+  (version 20230121)
+  (generator eeschema)
+  (uuid 091edd89-91d5-54b9-892a-aa28117da9e5)
+  (paper "A3")
+  (title_block
+    (title "Bolt logic board")
+    (date "2026-10-10")
+    (rev "0.1")
+    (company "Bolt_Invt open-source inverter controller")
+    (comment 1 "Replacement logic board for the Chevrolet Bolt EV inverter (OpenInverter stm32-sine, HW_BOLT)"))
+  (lib_symbols)
+  (sheet
+    (at 30 40)
+    (size 80 40)
+    (fields_autoplaced)
+    (stroke
+      (width 0.1524)
+      (type solid))
+    (fill
+      (color 0 0 0 0.0000))
+    (uuid 2cf9e564-83bf-551b-b09a-2c1b4fdcd71d)
+    (property "Sheetname" "Power"
+      (at 30 39.3 0)
+      (effects
+        (font (size 1.27 1.27))
+        (justify left bottom)))
+    (property "Sheetfile" "power.kicad_sch"
+      (at 30 80.6 0)
+      (effects
+        (font (size 1.27 1.27))
+        (justify left top)))
+    (instances (project "bolt_logic"
+  (path "/091edd89-91d5-54b9-892a-aa28117da9e5"
+    (page "2")))))
+  (sheet
+    (at 125 40)
+    (size 80 40)
+    (fields_autoplaced)
+    (stroke
+      (width 0.1524)
+      (type solid))
+    (fill
+      (color 0 0 0 0.0000))
+    (uuid 4351be87-4ae7-5cd0-9385-c047eba336f0)
+    (property "Sheetname" "MCU"
+      (at 125 39.3 0)
+      (effects
+        (font (size 1.27 1.27))
+        (justify left bottom)))
+    (property "Sheetfile" "mcu.kicad_sch"
+      (at 125 80.6 0)
+      (effects
+        (font (size 1.27 1.27))
+        (justify left top)))
+    (instances (project "bolt_logic"
+  (path "/091edd89-91d5-54b9-892a-aa28117da9e5"
+    (page "3")))))
+  (sheet
+    (at 220 40)
+    (size 80 40)
+    (fields_autoplaced)
+    (stroke
+      (width 0.1524)
+      (type solid))
+    (fill
+      (color 0 0 0 0.0000))
+    (uuid 066db55f-d4ab-5f73-ba13-9a08feb6fbfa)
+    (property "Sheetname" "Gate interface"
+      (at 220 39.3 0)
+      (effects
+        (font (size 1.27 1.27))
+        (justify left bottom)))
+    (property "Sheetfile" "gate_if.kicad_sch"
+      (at 220 80.6 0)
+      (effects
+        (font (size 1.27 1.27))
+        (justify left top)))
+    (instances (project "bolt_logic"
+  (path "/091edd89-91d5-54b9-892a-aa28117da9e5"
+    (page "4")))))
+  (sheet
+    (at 315 40)
+    (size 80 40)
+    (fields_autoplaced)
+    (stroke
+      (width 0.1524)
+      (type solid))
+    (fill
+      (color 0 0 0 0.0000))
+    (uuid f0d79f54-d87e-51e5-b897-d0534300d643)
+    (property "Sheetname" "Current sense, overcurrent, temperature"
+      (at 315 39.3 0)
+      (effects
+        (font (size 1.27 1.27))
+        (justify left bottom)))
+    (property "Sheetfile" "analog.kicad_sch"
+      (at 315 80.6 0)
+      (effects
+        (font (size 1.27 1.27))
+        (justify left top)))
+    (instances (project "bolt_logic"
+  (path "/091edd89-91d5-54b9-892a-aa28117da9e5"
+    (page "5")))))
+  (sheet
+    (at 30 100)
+    (size 80 40)
+    (fields_autoplaced)
+    (stroke
+      (width 0.1524)
+      (type solid))
+    (fill
+      (color 0 0 0 0.0000))
+    (uuid 6b55de0a-97a5-540c-aa71-4d848b27fecc)
+    (property "Sheetname" "Resolver / encoder"
+      (at 30 99.3 0)
+      (effects
+        (font (size 1.27 1.27))
+        (justify left bottom)))
+    (property "Sheetfile" "resolver.kicad_sch"
+      (at 30 140.6 0)
+      (effects
+        (font (size 1.27 1.27))
+        (justify left top)))
+    (instances (project "bolt_logic"
+  (path "/091edd89-91d5-54b9-892a-aa28117da9e5"
+    (page "6")))))
+  (sheet
+    (at 125 100)
+    (size 80 40)
+    (fields_autoplaced)
+    (stroke
+      (width 0.1524)
+      (type solid))
+    (fill
+      (color 0 0 0 0.0000))
+    (uuid 197baf1d-b43f-5597-9284-b8472b58f302)
+    (property "Sheetname" "Vehicle connector and I/O"
+      (at 125 99.3 0)
+      (effects
+        (font (size 1.27 1.27))
+        (justify left bottom)))
+    (property "Sheetfile" "vehicle.kicad_sch"
+      (at 125 140.6 0)
+      (effects
+        (font (size 1.27 1.27))
+        (justify left top)))
+    (instances (project "bolt_logic"
+  (path "/091edd89-91d5-54b9-892a-aa28117da9e5"
+    (page "7")))))
+  (sheet
+    (at 220 100)
+    (size 80 40)
+    (fields_autoplaced)
+    (stroke
+      (width 0.1524)
+      (type solid))
+    (fill
+      (color 0 0 0 0.0000))
+    (uuid 70423f70-0b78-5898-aaff-946451030441)
+    (property "Sheetname" "WiFi (ESP32)"
+      (at 220 99.3 0)
+      (effects
+        (font (size 1.27 1.27))
+        (justify left bottom)))
+    (property "Sheetfile" "wifi.kicad_sch"
+      (at 220 140.6 0)
+      (effects
+        (font (size 1.27 1.27))
+        (justify left top)))
+    (instances (project "bolt_logic"
+  (path "/091edd89-91d5-54b9-892a-aa28117da9e5"
+    (page "8")))))
+  (sheet_instances (path "/"
+  (page "1"))))

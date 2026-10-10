@@ -25,8 +25,8 @@ Legend: **REUSE** = V6 circuit unchanged · **ADAPT** = V6 circuit, new values/h
 
 | Block | Status | Notes |
 |----|----|----|
-| Power: input, 5 V buck, 3.3 V LDO | ADAPT | add ignition-switched input; buck set to 5.0 V |
-| Analog 5 V (sensor rail, CN2 28/29) | NEW | dedicated LDO |
+| Power: input, 5 V buck, 3.3 V LDO | ADAPT | ignition-switched input; AP63205 fixed 5.0 V buck |
+| Analog 5 V (sensor rail, CN2 28/29) | NEW | ferrite-filtered branch of the buck |
 | Gate-board 12 V supply switch | NEW | MCU-controlled high-side switch |
 | −5 V (LM2664) | DROP | only fed Tesla's HV-sense board |
 | MCU core, crystals, SWD | REUSE | STM32F103RBT6 |
@@ -98,32 +98,30 @@ FT = 5 V-tolerant. Non-FT pins never see 5 V signals directly.
 ### 4.1 Power (ADAPT + NEW)
 
 ```
-CN1 M1/M4 (Batt+) ─┬─ [Q1 high-side switch, EN = IGN (CN1 L3)] ─ VBAT_SW
-                   │      → SS54B ─ VCC_12V ─┬─ RT8259 buck ─ +5V (digital)
-                   │                         │     └─ LD1117-3.3 ─ +3V3
-                   │                         ├─ TPS7B6950-Q1 LDO ─ +5V_A (CN2 28/29)
-                   │                         └─ [Q2 high-side switch, EN = PA15] ─ +12V_GATE (CN2 31/33/35/37)
-CN1 L3 (IGN) ─ 124 k ─ CN2 36/38   (replicates the OEM ~125 kΩ ignition sense)
+CN1 M1/M4 (Batt+) ─ TVS1 SMBJ26CA
+   └─ Q1 BTS443P (IN ← IGN via 10k/6.8k) ─ VBAT_SW ─ D1 SS54 ─ VCC_12V
+         VCC_12V ─┬─ U1 AP63205WU buck (fixed 5.0 V) ─ +5V ─┬─ U2 LD1117-3.3 ─ +3V3
+                  │                                          └─ FB1 ferrite ─ +5V_A (CN2 28/29)
+                  └─ Q2 BTS443P (IN ← PA15 GATE_PWR_EN, 10k pull-down) ─ +12V_GATE (CN2 31/33/35/37)
+CN1 L3 (IGN) ─ 124 kΩ ─ CN2 36/38   (replicates the OEM ~125 kΩ ignition sense)
 ```
 
-- **Q1, logic power switch (NEW):** smart high-side switch (Infineon PROFET+ class,
-  e.g. BTS5045-1EJA; part TBD) enabled by ignition, so the board draws no quiescent
-  current with ignition off. The OEM board has two DPAK parts in the same corner —
-  likely the same arrangement.
-- **Buck:** RT8259 (V6 JLC part). Change the feedback top resistor to **52.3 kΩ**
-  (Vout = 0.8 × (1 + 52.3/10) = **4.98 V**). The V6's 56 kΩ gives 5.28 V. The
-  gate board's 1ED020I12 VCC1 is specified to 5.5 V max, so 5.0 V leaves margin.
-  Load: our board ~250 mA (ESP32 peaks), gate board digital ~60 mA (6× 1ED020 VCC1,
-  74HC365, 2× 74AHC08).
-- **+5V_A (NEW):** dedicated 5 V LDO from VCC_12V (TPS7B6950-Q1, 150 mA, SOT-223)
-  for the three HC5FW sensors (~60–75 mA) via CN2 28/29. The sensors are ratiometric
-  to this rail and the STM32 ADC reference doesn't track it, so it needs to be
-  accurate and quiet. Dissipation ≈ (13.8 − 5) × 0.075 ≈ 0.7 W.
-- **Q2, gate-board supply switch (NEW):** high-side switch from VCC_12V to CN2
-  31/33/35/37, enabled by **PA15 (GATE_PWR_EN, 10 k pull-down)**. This gives a hard
-  safe state: firmware enables gate power only after init. With the switch off, the
-  isolated gate supplies collapse and the 1ED020I12 UVLO holds every IGBT off.
-- **−5 V (LM2664): DROP.**
+- **Q1 / Q2: Infineon BTS443P** smart high-side switches (16 mΩ, 7.6 A, 36 V, DPAK).
+  Q1 is enabled by ignition, so the board draws nothing with ignition off. Q2 is
+  enabled by firmware after init; with it off the isolated gate supplies collapse and
+  the 1ED020I12 UVLO holds every IGBT off. Both IS (current-sense) pins have 1 kΩ to
+  GND. The OEM board has two DPAK parts in the same corner.
+- **Buck: AP63205WU** (fixed 5.0 V, 2 A, 3.8–32 V input, synchronous), replacing the
+  V6's RT8259 (~24 V input, 5.28 V with the V6 divider). The 32 V rating suits an
+  automotive 12 V rail, and the exact 5.0 V keeps the gate board's 1ED020 VCC1 inside
+  its 5.5 V limit. 6.8 µH, 2× 22 µF out.
+- **+5V_A** (current sensors): a ferrite-filtered branch of the buck output. The
+  automotive LDO candidate (TPS7B6950-Q1) is only ±3%, and the sensors are ratiometric
+  to this rail while the ADC reference doesn't track it, so the buck's tighter output
+  is the more accurate source; the ferrite keeps switching noise out.
+- **3.3 V:** LD1117S33 from +5V (REUSE).
+- **TVS1** SMBJ26CA on VBAT; **−5 V (LM2664): DROP.**
+- Mounting holes H1–H12 (plated) → CHASSIS → 0 Ω → GND (assembly option); H13/H14 NPTH.
 
 ### 4.2 MCU core (REUSE)
 STM32F103RBT6; 8 MHz crystal (22 pF), 32.768 kHz crystal (10 pF); VDDA through 10 µH;
@@ -202,8 +200,11 @@ same MCU pins via 0 Ω assembly options. (Alternative kept on file: an AD2S1205 
 which the firmware's SPI mode can read — same chip family as the OEM board.)
 
 Exciter (f = PWM frequency / 2, e.g. 4.4 kHz at 8.8 kHz PWM):
-`PD2 → 3-pole RC/Sallen-Key low-pass (≈ f_exc) → bridge power amplifier from VCC_12V
-(candidate TCA0372 dual 1 A power op-amp) → series DC-block → CN1 B2 (EXC+) / B1 (EXC−)`
+`PD2 → 0 Ω (RES option) → RC pole (10 k/3.3 nF) → unity-gain Sallen-Key (MCP6292,
+fc ≈ 5 kHz, Q ≈ 0.73) → 1 µF AC-couple → L272D bridge from VCC_12V (A: non-inverting
+gain 3 about VCC_12V/2; B: unity inverter about the same bias) → 10 µF DC-block +
+10 Ω → CN1 B2 (EXC+) / 10 Ω → B1 (EXC−)`
+- L272: ST dual 1 A power op-amp, 4–28 V, 1 V/µs (a ~20 Vpp, 5 kHz exciter needs ~0.3 V/µs).
 - Bridge drive gives up to ~20 Vpp across the primary from 12 V; gain is
   resistor-set so the amplitude can be matched to the resolver.
 - Firmware assumes a ~305° total phase delay (filter + amp + resolver), tunable via
@@ -229,7 +230,7 @@ gain set by resistors, output biased at 1.65 V (buffered divider from +3V3) →
 | | Y3 | GND | — | |
 | 1 → TMPM (PC2) | Y0 | motor temp | CN1 J1 (J2 = GND) | **2.2 kΩ to +3V3 default** (own footprint; sensor type unknown) |
 | | Y1 | aux temp | aux header (4.13) | 2.2 kΩ to +3V3 |
-| | Y2, Y3 | spare | | |
+| | Y2, Y3 | GND | — | |
 
 Pulling up to 3.3 V (not the V6's 5 V) keeps an open or cold NTC within the ADC
 range and makes the reading ratiometric to the ADC reference. Module NTC: R25 =
@@ -242,7 +243,8 @@ from +5V through a 50 mA polyfuse.
 
 ### 4.11 Outputs (REUSE + 1)
 BTS133TC low-side switches: DCSW_OUT (PC13) → main contactor, PRECHARGE_OUT (PB1) →
-precharge, **PUMP_OUT (PB9) → pump/fan (new 3rd channel)**.
+precharge, **PUMP_OUT (PB9) → pump/fan (new 3rd channel)**. Each MCU drive line has a 10 kΩ
+pull-down so contactors stay off while the MCU is in reset.
 
 ### 4.12 CAN, ESP32, programming (REUSE)
 SN65HVD234 at 3.3 V on PA11/PA12, 120 Ω termination (0 Ω link to make it optional).
@@ -308,12 +310,43 @@ the aux header (4.13).
    `err_out` → unused; new `gatepwr_out` PA15 (enable after init); new `gateok_in` PA0
    and `gateflt_in` PC9 with error messages.
 3. Defaults: `il1gain`/`il2gain` ≈ 2.25 (sign at commissioning); `udcgain` from 4.7.
-4. Temperature curves: Infineon module NTC (5 kΩ, B 3433) on 4.7 kΩ to 3.3 V; Bolt
-   motor sensor (TBD).
+4. Temperature: HW_BOLT branch in `VehicleControl::GetTemps()` (the HW_TESLA branch
+   hard-codes Tesla curves). Mux cycle: channel 0 → NTC U + motor temp, 1 → NTC V +
+   aux temp, 2 → NTC W, 3 → both sides grounded; tmphs = max(U, V, W). Curves:
+   Infineon module NTC (5 kΩ, B 3433) on 4.7 kΩ to 3.3 V; motor sensor TBD (2.2 kΩ
+   pull-up).
+4a. Break handler (`pwmgeneration.cpp`): extend `ocur_in.Get() && hwRev == HW_TESLA`
+   to HW_BOLT so a gate-board fault reports as DESAT, not overcurrent (PC9 already
+   carries the combined FLT/RDY line).
 5. Resolver: verify exciter frequency/amplitude and `resolverSampleDelay` on the
    bench.
 
-## 8. Open questions
+## 8. Schematic capture (v0.1)
+
+`hardware/bolt_logic/` — 7 hierarchical sheets (power, MCU, gate interface, analog,
+resolver/encoder, vehicle I/O, WiFi), 258 parts, 169 nets. Generated by
+`tools/gen_sch.py` from the design table `tools/sch_design.py`; every pin is
+connected by a named global label, and after writing the script exports the netlist
+with `kicad-cli` and checks every pin against the table (currently: exact match, no
+duplicate references). PDF: `docs/bolt_logic_schematic.pdf`.
+
+Library symbols are used wherever KiCad has an exact or pin-identical part (value
+field carries the real part): 74LS573 → 74HCT573, 74LS30 → CD74HCT30, 74LS21 → 74HC21,
+CD4052B → 74HCT4052, MCP6002 → MCP6292. Custom symbols (`Bolt.kicad_sym`): CN1_GM48,
+BTS133TC.
+
+### Pre-layout verification checklist (datasheet vs. symbol/footprint)
+
+| Part | Check |
+|----|----|
+| **L272D** | Library symbol: V+ = 4, V− = 6, A = 3/13/14, B = 5/11/12. Confirm against ST's pin-connection figure (not readable as text). |
+| **BTS443P** | Pinout (OUT 1/5, IN 2, Vbb 3 = tab, IS 4), IN thresholds with 3.3 V drive (Q2) and the 10 k/6.8 k divider from IGN (Q1), footprint: library default TO-252-4 vs. the part's TO-252-5. |
+| **BTS133TC** | TO-263 pad mapping (tab = D = pin 2) and that 3.3 V drive fully enhances it (V6 does this). |
+| **AP63205WU** | Inductor value for 5 V out, EN tied to VIN, input/output capacitor values. |
+| **CN1** | Hole diameters (1.0 mm placeholder; rows M/L may use larger terminals). |
+| **CN2** | Samtec SSW insulator height vs. the OEM part. |
+
+## 9. Open questions
 
 | # | Item | Status |
 |----|----|----|
@@ -321,5 +354,5 @@ the aux header (4.13).
 | 2 | Bolt motor temp sensor type | open — 2.2 k default pull-up, own footprint |
 | 3 | CN2 pin 18 | **assumed DC-bus**; transfer function needed before HV (bench test) |
 | 4 | Resolver approach | **resolved** — software resolver |
-| 5 | Parts to select: Q1/Q2 high-side switches, exciter power amp, polyfuses | open |
+| 5 | Parts: Q1/Q2 = BTS443P, exciter = L272D, buck = AP63205WU, polyfuses chosen | **resolved** (verify per checklist) |
 | 6 | CN2 insulator height vs. OEM | open |
