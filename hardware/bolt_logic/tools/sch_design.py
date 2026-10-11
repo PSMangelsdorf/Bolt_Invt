@@ -359,9 +359,8 @@ vh.add("J3", "Connector_Generic:Conn_02x06_Odd_Even", "AUX I/O",
 # 4.12  WIFI (ESP32)
 # =========================================================================
 wf = Sheet("wifi", "wifi.kicad_sch", "WiFi (ESP32)")
-# 32UE: u.FL external antenna - the board sits inside the aluminium inverter housing
-ESP = "RF_Module:ESP32-WROOM-32UE"
-wf.add("U30", ESP, "ESP32-WROOM-32UE", "RF_Module:ESP32-WROOM-32UE",
+ESP = "RF_Module:ESP32-WROOM-32"
+wf.add("U30", ESP, "ESP32-WROOM-32", "RF_Module:ESP32-WROOM-32",
        nc_rest(ESP, {1: "GND", 2: "ESP_3V3", 3: "ESP_EN", 25: "ESP_IO0", 34: "USART_TX", 35: "USART_RX",
                      15: "GND", 38: "GND", 39: "GND"}))
 wf.add("L30", "Device:L", "10uH", "Inductor_SMD:L_0805_2012Metric", {1: "+3V3", 2: "ESP_3V3"})

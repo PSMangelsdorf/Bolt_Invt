@@ -248,11 +248,7 @@ pull-down so contactors stay off while the MCU is in reset.
 
 ### 4.12 CAN, ESP32, programming (REUSE)
 SN65HVD234 at 3.3 V on PA11/PA12, 120 Ω termination (0 Ω link to make it optional).
-ESP32-WROOM-32**UE** on PB10/PB11 with its 6-pin programming header. SWD 3-pin header.
-The UE variant has a u.FL connector instead of the PCB antenna: the board sits inside the
-aluminium inverter housing, where an on-module antenna would not radiate, and the
-PCB-antenna keep-out (no copper under or beside the antenna) also didn't fit the layout.
-It needs a u.FL pigtail to an antenna outside the housing.
+ESP32-WROOM-32 on PB10/PB11 with its 6-pin programming header. SWD 3-pin header.
 
 ### 4.13 Auxiliary I/O header (NEW)
 On-board 2×6, 2.54 mm header for I/O that doesn't fit CN1 without using reserved OEM
