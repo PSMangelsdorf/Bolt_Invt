@@ -146,7 +146,6 @@ GROUPS = [
     ("vin", ["R%d" % i for i in range(100, 118)] + ["C%d" % i for i in range(100, 109)] + ["F1", "F2", "F3"],
      [(105, 55, 200, 80)]),
     ("out", ["U20", "U21", "U22", "R120", "R121", "R122"], [(105, 80, 200, 106)]),
-    ("aux", ["J3", "F4"], [(200, 70, 250, 106)]),
     ("wifi", ["U30", "L30", "C120", "C121", "R130", "C122", "J4"], [(175, 2, 262, 55)]),
 ]
 # ESP32-WROOM-32E (PCB antenna, as V6): antenna end of the module (local y = -15.75) flush with
@@ -405,7 +404,7 @@ def render(board, path, title):
                 d.arc([tx(c[0] - r, c[1] + r), tx(c[0] + r, c[1] - r)], 180, 360, fill=(230, 230, 230), width=2)
     colors = {"power": (230, 90, 70), "mcu": (90, 160, 250), "gate": (250, 200, 60), "analog": (120, 220, 120),
               "resolver": (200, 120, 240), "can": (60, 210, 210), "vin": (240, 150, 200), "out": (250, 130, 40),
-              "aux": (170, 170, 170), "wifi": (120, 200, 255), "fixed": (200, 200, 200)}
+              "wifi": (120, 200, 255), "fixed": (200, 200, 200)}
     gof = {r: g for g, refs, _ in GROUPS for r in refs}
     fps = {fp.GetReference(): fp for fp in board.GetFootprints()}
     # ratsnest (nearest-neighbour chain per net, GND omitted)

@@ -111,12 +111,12 @@ stm_pins = by_name(STM, {
     "PD1": "OSC_OUT", "NRST": "NRST", "PC0": "THROTTLE2", "PC1": "THROTTLE1", "PC2": "TMPM",
     "PC3": "UDC", "VSSA": "GND", "VDDA": "VDDA", "PA0": "GATE_OK", "PA1": "OCUR_OK",
     "PA2": "BRAKE_IN", "PA3": "MPROT_IN", "PA4": "FWD_IN", "PA5": "IL1", "PA6": "POS_A",
-    "PA7": "POS_B", "PC4": "TMPHS", "PC5": "SPEED_OUT", "PB0": "IL2", "PB1": "PRECHARGE_OUT",
+    "PA7": "POS_B", "PC4": "TMPHS", "PC5": "NC", "PB0": "IL2", "PB1": "PRECHARGE_OUT",
     "PB2": "BOOT1", "PB10": "USART_TX", "PB11": "USART_RX", "PB12": "PWM_INHIBIT",
     "PB13": "PWM_UL_3V", "PB14": "PWM_VL_3V", "PB15": "PWM_WL_3V", "PC6": "REV_IN",
     "PC7": "EMCYSTOP_IN", "PC8": "MUX_S1", "PC9": "GATE_FLT_MCU", "PA8": "PWM_UH_3V",
     "PA9": "PWM_VH_3V", "PA10": "PWM_WH_3V", "PA11": "CAN_RX", "PA12": "CAN_TX", "PA13": "SWDIO",
-    "PA14": "SWCLK", "PA15": "GATE_PWR_EN", "PC10": "MUX_S0", "PC11": "VTG_OUT", "PC12": "LED_OUT",
+    "PA14": "SWCLK", "PA15": "GATE_PWR_EN", "PC10": "MUX_S0", "PC11": "NC", "PC12": "LED_OUT",
     "PD2": "POS_Z", "PB3": "NC", "PB4": "BOARD_ID", "PB5": "CRUISE_IN", "PB6": "START_IN",
     "PB7": "OCURLIM_NEG_PWM", "BOOT0": "BOOT0", "PB8": "OCURLIM_POS_PWM", "PB9": "PUMP_OUT",
 })
@@ -229,12 +229,12 @@ an.c("C60", "100nF", "+5V", "GND")
 an.c("C61", "100nF", "+5V", "GND")
 an.r("R51", "10k", "OCUR_OK", "+3V3")
 an.add("U11", "Analog_Switch:CD4052B", "74HCT4052", SOIC16, {
-    12: "MOT_TEMP", 14: "AUX_TEMP", 15: "GND", 11: "GND", 13: "TMPM",
+    12: "MOT_TEMP", 14: "GND", 15: "GND", 11: "GND", 13: "TMPM",
     1: "NTC_U", 5: "NTC_V", 2: "NTC_W", 4: "GND", 3: "TMPHS",
     10: "MUX_S0", 9: "MUX_S1", 6: "GND", 7: "GND", 8: "GND", 16: "+5V"})
 an.c("C62", "100nF", "+5V", "GND")
 for i, (sig, rv) in enumerate([("NTC_U", "4.7k"), ("NTC_V", "4.7k"), ("NTC_W", "4.7k"),
-                               ("MOT_TEMP", "2.2k"), ("AUX_TEMP", "2.2k")]):
+                               ("MOT_TEMP", "2.2k")]):
     an.r("R%d" % (52 + i), rv, "+3V3", sig)
     an.c("C%d" % (63 + i), "1uF", sig, "GND")
 
@@ -302,7 +302,7 @@ for i, (sig, pos) in enumerate([("A", "POS_A"), ("B", "POS_B"), ("Z", "POS_Z")])
     rs.r("R%d" % (89 + 2 * i), "0R", "ENC_%s_F" % sig, pos, dnp=True)
 
 # =========================================================================
-# 4.10-4.13, 6  VEHICLE: CN1, inputs, outputs, CAN, aux header
+# 4.10-4.12, 6  VEHICLE: CN1, inputs, outputs, CAN
 # =========================================================================
 vh = Sheet("vehicle", "vehicle.kicad_sch", "Vehicle connector and I/O")
 CN1_NETS = {
@@ -312,7 +312,7 @@ CN1_NETS = {
     "D1": "COS_N", "D2": "COS_P", "D3": "START_12V", "D4": "CRUISE_12V",
     "E1": "MAIN_CONT_OUT", "E2": "PRECHG_OUT_SW", "E3": "CAN_L", "E4": "CAN_H",
     "F1": "NC", "F2": "NC", "F3": "CAN_L", "F4": "CAN_H",
-    "G1": "HVIL_REF", "G2": "HVIL_SIG", "G3": "NC", "G4": "NC",
+    "G1": "NC", "G2": "NC", "G3": "NC", "G4": "NC",
     "H1": "NC", "H2": "NC", "H3": "NC", "H4": "NC",
     "J1": "MOT_TEMP", "J2": "GND", "J3": "NC", "J4": "NC",
     "K1": "ENC_A_IN", "K2": "GND", "K3": "ENC_B_IN", "K4": "ENC_Z_IN",
@@ -320,7 +320,8 @@ CN1_NETS = {
     "M1": "VBAT", "M2": "NC", "M3": "GND", "M4": "VBAT",
 }
 CN1_LABELS = {  # pin names shown on the symbol (OEM function in brackets where reserved)
-    "F1": "RSVD(aux pump ctl)", "F2": "RSVD(aux pump fb)", "G3": "RSVD(CAN3-)", "G4": "RSVD(CAN3+)",
+    "F1": "RSVD(aux pump ctl)", "F2": "RSVD(aux pump fb)", "G1": "RSVD(HVIL ref)", "G2": "RSVD(HVIL sig)",
+    "G3": "RSVD(CAN3-)", "G4": "RSVD(CAN3+)",
     "H1": "RSVD(TFT sig)", "H2": "RSVD(TFT ref)", "H3": "RSVD(CAN3-)", "H4": "RSVD(CAN3+)",
     "J3": "RSVD(CAN2-)", "J4": "RSVD(CAN2+)", "L1": "RSVD(IMS A)", "L4": "RSVD(IMS B)", "M2": "RSVD(wake)",
 }
@@ -329,18 +330,16 @@ for i, s in enumerate(["FWD", "REV", "BRAKE", "START", "CRUISE"]):
     vh.r("R%d" % (100 + 2 * i), "4.7k", "%s_12V" % s, "%s_IN" % s)
     vh.r("R%d" % (101 + 2 * i), "1.5k", "%s_IN" % s, "GND")
     vh.c("C%d" % (100 + i), "1uF", "%s_IN" % s, "GND")
+# No emergency-stop / motor-protection inputs on this board (no connector for them): the
+# firmware's inputs are held at "OK" (high) by pull-ups.
 for i, s in enumerate(["EMCYSTOP", "MPROT"]):
-    vh.r("R%d" % (110 + 2 * i), "1k", "%s_HDR" % s, "%s_IN" % s)
     vh.r("R%d" % (111 + 2 * i), "10k", "%s_IN" % s, "+3V3")
-    vh.c("C%d" % (105 + i), "100nF", "%s_IN" % s, "GND")
 for i, (s, adc) in enumerate([("THR1", "THROTTLE1"), ("THR2", "THROTTLE2")]):
     vh.r("R%d" % (114 + 2 * i), "10k", "%s_IN" % s, adc)
     vh.r("R%d" % (115 + 2 * i), "10k", "%s_IN" % s, "GND")
     vh.c("C%d" % (107 + i), "1uF", adc, "GND")
 vh.add("F1", "Device:Polyfuse", "50mA", FUSE, {1: "+5V", 2: "PEDAL_5V"})
 vh.add("F2", "Device:Polyfuse", "200mA", FUSE, {1: "+5V", 2: "ENC_5V"})
-vh.add("F3", "Device:Polyfuse", "100mA", FUSE, {1: "+5V", 2: "AUX_5V"})
-vh.add("F4", "Device:Polyfuse", "500mA", "Fuse:Fuse_1812_4532Metric", {1: "VBAT_SW", 2: "AUX_12V"})
 for i, (inp, out) in enumerate([("DCSW_OUT", "MAIN_CONT_OUT"), ("PRECHARGE_OUT", "PRECHG_OUT_SW"),
                                 ("PUMP_OUT", "PUMP_OUT_SW")]):
     vh.add("U%d" % (20 + i), "Bolt:BTS133TC", "BTS133TC", "Package_TO_SOT_SMD:TO-263-2", {1: inp, 2: out, 3: "GND"})
@@ -350,10 +349,6 @@ vh.add("U23", "Interface_CAN_LIN:SN65HVD234", "SN65HVD234", SOIC8,
 vh.c("C109", "100nF", "+3V3", "GND")
 vh.r("R123", "120", "CAN_H", "CAN_TERM")
 vh.r("R124", "0R", "CAN_TERM", "CAN_L")                # remove to disable termination
-vh.add("J3", "Connector_Generic:Conn_02x06_Odd_Even", "AUX I/O",
-       "Connector_PinHeader_2.54mm:PinHeader_2x06_P2.54mm_Vertical",
-       {1: "AUX_12V", 2: "GND", 3: "AUX_5V", 4: "GND", 5: "AUX_TEMP", 6: "GND", 7: "EMCYSTOP_HDR",
-        8: "MPROT_HDR", 9: "VTG_OUT", 10: "HVIL_SIG", 11: "HVIL_REF", 12: "GND"})
 
 # =========================================================================
 # 4.12  WIFI (ESP32)
