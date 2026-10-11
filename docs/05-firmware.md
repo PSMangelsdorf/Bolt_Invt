@@ -52,8 +52,14 @@ Not changed:
 5. **PWM.** With the DC link unpowered, check PWM polarity and dead time at the gate driver inputs before any high-voltage test.
 6. **CN2 pin 18.** Do the DC-bus bench test (`03` §4.7), then set `udcgain`/`udcofs`.
 
-## 4. Open firmware questions
+## 4. Decisions and open questions
 
-- **Aux-header temperature:** add a value for the aux temperature, or fold it into `tmpm`?
-- **Pump/fan output:** it currently follows the stock fan logic (`outmode` 1/2 with `fanthresh`). Should the pump instead run whenever the inverter is enabled?
-- **Gate-board health:** decide whether to refuse start while `din_gateok` or `din_desat` reads Error. Right now a start with an unhealthy gate board trips straight away, and the reason is reported.
+Decided (owner):
+- **Pump/fan output:** keep the stock fan logic (`outmode` 1/2 with `fanthresh`).
+- **Gate-board health at start:** no start interlock. A start with an unhealthy gate board
+  trips straight away and reports the reason (`DESAT` or `GATEBOARD`).
+
+Open:
+- **Aux-header temperature** (J3 pin 5, spare input, see `03` §4.13): read on mux channel 1
+  but not used. Options are to give it its own value, fold it into `tmpm`, or drop it from
+  the board.
