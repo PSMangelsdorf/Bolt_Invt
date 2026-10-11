@@ -254,10 +254,22 @@ module side. EN has 4.7 k to the module's 3.3 V and 100 nF to GND. The 6-pin pro
 header is the same as the V6: IO0, GND, GND, +5 V, RX, TX. SWD 3-pin header.
 
 ### 4.13 Auxiliary I/O header (NEW)
-On-board 2×6, 2.54 mm header for I/O that doesn't fit CN1 without using reserved OEM
-positions: AUX_TEMP (mux 1Y1, 2.2 k pull-up), EMCYSTOP_IN, MPROT_IN, BMS_IN
-(12 V-tolerant, same 4k7/1k5 dividers as the other inputs), VTG_OUT (3.3 V logic,
-spare), +5V (polyfused), +12V (switched VBAT, polyfused), GND ×3, plus 2 spare.
+On-board 2×6, 2.54 mm header (J3) for I/O that doesn't fit CN1 without using reserved OEM
+positions. Pinout as captured in the schematic:
+
+| J3 | Signal | | J3 | Signal |
+|----|----|----|----|----|
+| 1 | AUX_12V (switched VBAT, polyfused) | | 7 | EMCYSTOP_IN (12 V input, 4k7/1k5 divider) |
+| 2 | GND | | 8 | MPROT_IN (12 V input, 4k7/1k5 divider) |
+| 3 | AUX_5V (polyfused) | | 9 | VTG_OUT (3.3 V logic, spare output) |
+| 4 | GND | | 10 | HVIL_SIG |
+| 5 | AUX_TEMP: spare temperature input, 2.2 k pull-up to 3.3 V → mux side 1, Y1 → PC2 (tmpm ADC) | | 11 | HVIL_REF |
+| 6 | GND (AUX_TEMP return) | | 12 | GND |
+
+There is no BMS input on this board: PC8 is the mux select, as on the Tesla board, and a
+BMS signal goes over CAN. An earlier draft of this paragraph listed BMS_IN; the schematic
+never had it. AUX_TEMP is nothing OEM: it is a spare input for a sensor the builder adds
+(for example coolant), and nothing is connected to it on a stock Bolt.
 
 ## 5. CN2 (internal, to gate board) net assignment
 
