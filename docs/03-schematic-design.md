@@ -53,7 +53,7 @@ FT = 5 V-tolerant. Non-FT pins never see 5 V signals directly.
 | 14 | PA0 | UVLO_IN | **GATE_OK** | AND of CN2 7–10 via 10 k/20 k divider (non-FT) |
 | 15 | PA1 | OCUR_IN | OCUR_OK | comparator node, pulled up to **3.3 V** (non-FT) |
 | 16 | PA2 | BRAKE_IN | BRAKE_IN | |
-| 17 | PA3 | MPROT_IN | MPROT_IN | |
+| 17 | PA3 | MPROT_IN | MPROT_IN | no input on this board: 10 k pull-up holds it at OK |
 | 20 | PA4 | FWD_IN | FWD_IN | |
 | 21 | PA5 | IL1 | **IL1 = phase U** (CN2 24) | |
 | 22 | PA6 | ENC_A | **RES_SIN** / ENC_A | assembly option |
@@ -80,13 +80,13 @@ FT = 5 V-tolerant. Non-FT pins never see 5 V signals directly.
 | 10 | PC2 | TMPM | TMPM | mux side 1 (motor temps) |
 | 11 | PC3 | UDC | UDC | from CN2 pin 18 (section 4.7) |
 | 24 | PC4 | TMPHS | TMPHS | mux side 2 (module NTC U/V/W) |
-| 25 | PC5 | SPEED_OUT | SPEED_OUT | |
+| 25 | PC5 | SPEED_OUT | NC | |
 | 37 | PC6 | REV_IN | REV_IN | |
-| 38 | PC7 | EMCYSTOP_IN | EMCYSTOP_IN | |
+| 38 | PC7 | EMCYSTOP_IN | EMCYSTOP_IN | no input on this board: 10 k pull-up holds it at OK |
 | 39 | PC8 | BMS_IN | MUX_S1 (temp1_out) | as HW_TESLA |
 | 40 | PC9 | DESAT | **GATE_FLT** (CN2 22) | FT; 1 k series |
 | 51 | PC10 | ERR_OUT | MUX_S0 (temp0_out) | as HW_TESLA |
-| 52 | PC11 | VTG_OUT | VTG_OUT | spare |
+| 52 | PC11 | VTG_OUT | NC | |
 | 53 | PC12 | LED_OUT | LED_OUT | |
 | 2 | PC13 | DCSW_OUT | DCSW_OUT | main contactor |
 | 3/4 | PC14/15 | 32.768 kHz | 32.768 kHz | |
@@ -125,7 +125,7 @@ CN1 L3 (IGN) ─ 124 kΩ ─ CN2 36/38   (replicates the OEM ~125 kΩ ignition s
 
 ### 4.2 MCU core (REUSE)
 STM32F103RBT6; 8 MHz crystal (22 pF), 32.768 kHz crystal (10 pF); VDDA through 10 µH;
-decoupling as V6; BOOT0 10 k to GND; BOOT1 4k7 to GND; NRST 100 nF; SWD 3-pin header;
+decoupling as V6; BOOT0 10 k to GND; BOOT1 4k7 to GND; NRST 100 nF; SWD header J1 (5-pin: 3.3 V, SWDIO, SWCLK, NRST, GND);
 power LED (470 Ω) and status LED on PC12 (1 kΩ). **New:** PB4 10 k to GND (board ID),
 PA15 10 k to GND (gate power enable default off), PB3 left unconnected.
 
@@ -229,7 +229,7 @@ gain set by resistors, output biased at 1.65 V (buffered divider from +3V3) →
 | | Y2 | NTC W | CN2 21 | 4.7 kΩ to +3V3, 1 µF |
 | | Y3 | GND | — | |
 | 1 → TMPM (PC2) | Y0 | motor temp | CN1 J1 (J2 = GND) | **2.2 kΩ to +3V3 default** (own footprint; sensor type unknown) |
-| | Y1 | aux temp | aux header (4.13) | 2.2 kΩ to +3V3 |
+| | Y1 | GND | — | |
 | | Y2, Y3 | GND | — | |
 
 Pulling up to 3.3 V (not the V6's 5 V) keeps an open or cold NTC within the ADC
@@ -237,8 +237,10 @@ range and makes the reading ratiometric to the ADC reference. Module NTC: R25 =
 5.0 kΩ, B25/100 = 3433 K; at 25 °C → 1.70 V, at 100 °C → 0.31 V.
 
 ### 4.10 Vehicle inputs (REUSE)
-Digital (12 V): 4k7 / 1k5 divider + 1 µF → FWD, REV, START, BRAKE, CRUISE (+ EMCYSTOP,
-MPROT, BMS as V6). Throttle (5 V pot): 10 k / 10 k + 1 µF → PC1, PC0. Pedal 5 V supply
+Digital (12 V): 4k7 / 1k5 divider + 1 µF → FWD, REV, START, BRAKE, CRUISE (all on CN1).
+EMCYSTOP and MPROT have no input on this board; 10 k pull-ups to 3.3 V hold both MCU pins at
+"OK", so the stock firmware runs unchanged. There is no BMS input either: PC8 is the mux
+select, as on the Tesla board, and a BMS signal goes over CAN. Throttle (5 V pot): 10 k / 10 k + 1 µF → PC1, PC0. Pedal 5 V supply
 from +5V through a 50 mA polyfuse.
 
 ### 4.11 Outputs (REUSE + 1)
@@ -251,13 +253,21 @@ SN65HVD234 at 3.3 V on PA11/PA12, 120 Ω termination (0 Ω link to make it optio
 ESP32 WiFi exactly as the V6 (IC14): ESP32-WROOM-32E (M113EH2800PH3Q0, PCB antenna) on
 PB10/PB11. Supply through a 10 µH inductor, with 100 nF on the 3.3 V side and 10 µF on the
 module side. EN has 4.7 k to the module's 3.3 V and 100 nF to GND. The 6-pin programming
-header is the same as the V6: IO0, GND, GND, +5 V, RX, TX. SWD 3-pin header.
+header (J4) is the same as the V6: IO0, GND, GND, +5 V, RX, TX. STM32 programming: SWD
+header J1 (3.3 V, SWDIO, SWCLK, NRST, GND).
 
-### 4.13 Auxiliary I/O header (NEW)
-On-board 2×6, 2.54 mm header for I/O that doesn't fit CN1 without using reserved OEM
-positions: AUX_TEMP (mux 1Y1, 2.2 k pull-up), EMCYSTOP_IN, MPROT_IN, BMS_IN
-(12 V-tolerant, same 4k7/1k5 dividers as the other inputs), VTG_OUT (3.3 V logic,
-spare), +5V (polyfused), +12V (switched VBAT, polyfused), GND ×3, plus 2 spare.
+**Connectors (owner):** the only connections on the board are CN1, CN2 and the two
+programming headers J1 and J4.
+
+### 4.13 Auxiliary I/O header — removed
+
+The earlier 2×6 aux header (J3) is gone; the owner wants no connectors beyond CN1, CN2 and
+programming. It took with it:
+- **Aux outputs:** the aux 12 V and 5 V outputs and their polyfuses (F3, F4).
+- **Aux temperature:** the input and its pull-up; mux 1Y1 is now grounded.
+- **Inputs:** the emergency-stop and motor-protection inputs (see 4.10).
+- **HVIL:** the routing from CN1 G1/G2, which are now reserved positions (section 6).
+- **Spare output:** VTG_OUT; PC11 is unconnected.
 
 ## 5. CN2 (internal, to gate board) net assignment
 
@@ -275,7 +285,7 @@ Part: Samtec SSW-120-01-T-D-LL (2×20, 2.54 mm socket strip, back side).
 ## 6. CN1 (vehicle) pin assignment — approved principle
 
 Keep every OEM function a conversion uses in its **OEM position** (power, ignition,
-resolver, motor temp, CAN, HVIL) so a Bolt drive-unit harness mates directly.
+resolver, motor temp, CAN) so a Bolt drive-unit harness mates directly.
 **Reserve (leave unconnected) every remaining OEM-only position** for a future
 OEM-compatible revision — aux pump, transmission fluid temp, the second/third CAN
 buses, IMS supplies, wake. Conversion I/O uses the 12 unused positions plus the
@@ -291,7 +301,6 @@ transmission-range-switch positions.
 | D2 / D1 | Position sensor 2 / 4 | **COS+ / COS−** (OEM) |
 | J1 / J2 | Motor temp signal / ref | **Motor temp** (OEM) |
 | E4 / E3, F4 / F3 | HS-GMLAN 1 +/− (daisy chain) | **CAN H / L** (OEM, both pairs) |
-| G2 / G1 | HVIL signal / ref | **HVIL** (OEM) |
 | B4, C3, C4, D3, D4 | Trans range switch A/B/P/C/S | **FWD, REV, BRAKE, START, CRUISE** |
 | A1, A2 | — | **THROTTLE1, THROTTLE2** |
 | A3, A4 | — | **Pedal 5 V, pedal GND** |
@@ -299,12 +308,13 @@ transmission-range-switch positions.
 | K1, K3, K4 | — | **ENC_A, ENC_B, ENC_Z** (encoder option) |
 | L2, M3 | — | **Encoder 5 V, encoder GND** |
 | F1, F2 | Aux pump control / feedback | **reserved — NC** |
+| G2 / G1 | HVIL signal / ref | **reserved — NC** (was routed to the removed aux header) |
 | H1, H2 | Trans fluid temp | **reserved — NC** |
 | G3/G4, H3/H4, J3/J4 | HS-GMLAN 3 and 2 | **reserved — NC** |
 | L1, L4, M2 | IMS supplies, accessory wake | **reserved — NC** |
 
-If a future revision also needs the stock range switch, the five drive inputs move to
-the aux header (4.13).
+If a future revision also needs the stock range switch, the five drive inputs would need
+other CN1 positions; there is no other connector on this board.
 
 ## 7. Firmware changes (stm32-sine fork) implied by this design
 
@@ -317,8 +327,8 @@ the aux header (4.13).
    and `gateflt_in` PC9 with error messages.
 3. Defaults: `il1gain`/`il2gain` ≈ 2.25 (sign at commissioning); `udcgain` from 4.7.
 4. Temperature: HW_BOLT branch in `VehicleControl::GetTemps()` (the HW_TESLA branch
-   hard-codes Tesla curves). Mux cycle: channel 0 → NTC U + motor temp, 1 → NTC V +
-   aux temp, 2 → NTC W, 3 → both sides grounded; tmphs = max(U, V, W). Curves:
+   hard-codes Tesla curves). Mux cycle: channel 0 → NTC U + motor temp, 1 → NTC V,
+   2 → NTC W (side 1 grounded on 1–3), 3 → both sides grounded; tmphs = max(U, V, W). Curves:
    Infineon module NTC (5 kΩ, B 3433) on 4.7 kΩ to 3.3 V; motor sensor TBD (2.2 kΩ
    pull-up).
 4a. Break handler (`pwmgeneration.cpp`): extend `ocur_in.Get() && hwRev == HW_TESLA`
@@ -330,7 +340,7 @@ the aux header (4.13).
 ## 8. Schematic capture (v0.1)
 
 `hardware/bolt_logic/` — 7 hierarchical sheets (power, MCU, gate interface, analog,
-resolver/encoder, vehicle I/O, WiFi), 258 parts, 169 nets. Generated by
+resolver/encoder, vehicle I/O, WiFi), 249 parts, 160 nets. Generated by
 `tools/gen_sch.py` from the design table `tools/sch_design.py`; every pin is
 connected by a named global label, and after writing the script exports the netlist
 with `kicad-cli` and checks every pin against the table (currently: exact match, no

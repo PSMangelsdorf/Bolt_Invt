@@ -2999,7 +2999,7 @@
       (width 0)
       (type default))
     (uuid d298ca13-5b5e-55ed-bfb0-af29fe143630))
-  (global_label "AUX_TEMP"
+  (global_label "GND"
     (shape passive)
     (at 63.5 139.7 0)
     (fields_autoplaced)
@@ -3569,86 +3569,6 @@
     (uuid bdf8b168-1df8-51a6-af97-d1bfeccabcde)
     (property "Intersheetrefs" "${INTERSHEET_REFS}"
       (at 154.94 140.97 0)
-      (effects
-        (font (size 1.27 1.27)) hide)))
-  (wire
-    (pts
-      (xy 162.56 128.27)
-      (xy 162.56 125.73))
-    (stroke
-      (width 0)
-      (type default))
-    (uuid 05ba7fde-a1f1-595d-a2e9-167ddab37891))
-  (global_label "+3V3"
-    (shape passive)
-    (at 162.56 125.73 90)
-    (fields_autoplaced)
-    (effects
-      (font (size 1.27 1.27))
-      (justify left))
-    (uuid aae7a5e5-b1af-5fd2-a5e0-3d48487d6e8c)
-    (property "Intersheetrefs" "${INTERSHEET_REFS}"
-      (at 162.56 125.73 0)
-      (effects
-        (font (size 1.27 1.27)) hide)))
-  (wire
-    (pts
-      (xy 162.56 135.89)
-      (xy 162.56 138.43))
-    (stroke
-      (width 0)
-      (type default))
-    (uuid b42908db-66ab-5af0-a710-c080a2cc3e17))
-  (global_label "AUX_TEMP"
-    (shape passive)
-    (at 162.56 138.43 270)
-    (fields_autoplaced)
-    (effects
-      (font (size 1.27 1.27))
-      (justify right))
-    (uuid 311b445e-61e0-58c4-9d70-c73974579635)
-    (property "Intersheetrefs" "${INTERSHEET_REFS}"
-      (at 162.56 138.43 0)
-      (effects
-        (font (size 1.27 1.27)) hide)))
-  (wire
-    (pts
-      (xy 172.72 130.81)
-      (xy 172.72 128.27))
-    (stroke
-      (width 0)
-      (type default))
-    (uuid 91407771-d386-5878-8cd0-f31fc7bb6a50))
-  (global_label "AUX_TEMP"
-    (shape passive)
-    (at 172.72 128.27 90)
-    (fields_autoplaced)
-    (effects
-      (font (size 1.27 1.27))
-      (justify left))
-    (uuid 2f46c91d-3cf8-58e6-95a0-993cfdbe1957)
-    (property "Intersheetrefs" "${INTERSHEET_REFS}"
-      (at 172.72 128.27 0)
-      (effects
-        (font (size 1.27 1.27)) hide)))
-  (wire
-    (pts
-      (xy 172.72 138.43)
-      (xy 172.72 140.97))
-    (stroke
-      (width 0)
-      (type default))
-    (uuid ea03fead-e1bb-5840-887a-2ba3ec029ec3))
-  (global_label "GND"
-    (shape passive)
-    (at 172.72 140.97 270)
-    (fields_autoplaced)
-    (effects
-      (font (size 1.27 1.27))
-      (justify right))
-    (uuid f70a3c70-907c-5c27-8796-4b77329d3b59)
-    (property "Intersheetrefs" "${INTERSHEET_REFS}"
-      (at 172.72 140.97 0)
       (effects
         (font (size 1.27 1.27)) hide)))
   (symbol
@@ -5402,72 +5322,4 @@
     (instances (project "bolt_logic"
   (path "/091edd89-91d5-54b9-892a-aa28117da9e5/f0d79f54-d87e-51e5-b897-d0534300d643"
     (reference "C66")
-    (unit 1)))))
-  (symbol
-    (lib_id "Device:R")
-    (at 162.56 132.08 0)
-    (unit 1)
-    (in_bom yes)
-    (on_board yes)
-    (dnp no)
-    (uuid 7c79ea45-dbc7-59f5-846c-a3ecd2179210)
-    (property "Reference" "R56"
-      (at 161.544 126.67 0)
-      (effects
-        (font (size 1.27 1.27))
-        (justify left)))
-    (property "Value" "2.2k"
-      (at 161.544 138.29 0)
-      (effects
-        (font (size 1.27 1.27))
-        (justify left)))
-    (property "Footprint" "Resistor_SMD:R_0805_2012Metric"
-      (at 162.56 132.08 0)
-      (effects
-        (font (size 1.27 1.27)) hide))
-    (property "Datasheet" "~"
-      (at 162.56 132.08 0)
-      (effects
-        (font (size 1.27 1.27)) hide))
-    (pin "1"
-      (uuid a017699c-9190-52d2-8cf7-940271d71ea4))
-    (pin "2"
-      (uuid b92f7c0a-df87-5e60-bfb4-5d815a624aad))
-    (instances (project "bolt_logic"
-  (path "/091edd89-91d5-54b9-892a-aa28117da9e5/f0d79f54-d87e-51e5-b897-d0534300d643"
-    (reference "R56")
-    (unit 1)))))
-  (symbol
-    (lib_id "Device:C")
-    (at 172.72 134.62 0)
-    (unit 1)
-    (in_bom yes)
-    (on_board yes)
-    (dnp no)
-    (uuid 767d5c57-8f7e-5942-8f77-15f568e49ece)
-    (property "Reference" "C67"
-      (at 170.688 129.21 0)
-      (effects
-        (font (size 1.27 1.27))
-        (justify left)))
-    (property "Value" "1uF"
-      (at 170.688 140.83 0)
-      (effects
-        (font (size 1.27 1.27))
-        (justify left)))
-    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
-      (at 172.72 134.62 0)
-      (effects
-        (font (size 1.27 1.27)) hide))
-    (property "Datasheet" "~"
-      (at 172.72 134.62 0)
-      (effects
-        (font (size 1.27 1.27)) hide))
-    (pin "1"
-      (uuid 94ba9856-db21-5997-a220-3a6a3ab96682))
-    (pin "2"
-      (uuid 6aec747f-10fc-5603-b58e-9191e9cb9f16))
-    (instances (project "bolt_logic"
-  (path "/091edd89-91d5-54b9-892a-aa28117da9e5/f0d79f54-d87e-51e5-b897-d0534300d643"
-    (reference "C67")
     (unit 1))))))
