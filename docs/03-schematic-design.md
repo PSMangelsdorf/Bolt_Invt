@@ -308,6 +308,9 @@ the aux header (4.13).
 
 ## 7. Firmware changes (stm32-sine fork) implied by this design
 
+**Status:** implemented on branch `hw-bolt` of the stm32-sine fork; see `05-firmware.md`.
+
+
 1. `HW_BOLT` enum value; `detect_hw()` checks the PB4 board-ID strap **first**.
 2. `io_setup()` HW_BOLT case: temp mux on PC10/PC8 (as HW_TESLA); `fan_out` → PB9;
    `err_out` → unused; new `gatepwr_out` PA15 (enable after init); new `gateok_in` PA0
