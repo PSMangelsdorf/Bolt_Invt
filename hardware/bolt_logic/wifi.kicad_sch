@@ -938,42 +938,42 @@
         (font (size 1.27 1.27)) hide)))
   (wire
     (pts
-      (xy 93.98 39.37)
-      (xy 93.98 36.83))
+      (xy 93.98 36.83)
+      (xy 93.98 34.29))
     (stroke
       (width 0)
       (type default))
-    (uuid 3feb846f-f04b-5350-82f6-d3897ee78968))
-  (global_label "ESP_3V3"
+    (uuid 5cf6a2ea-814b-5033-ad86-3068401f1bd2))
+  (global_label "+3V3"
     (shape passive)
-    (at 93.98 36.83 90)
+    (at 93.98 34.29 90)
     (fields_autoplaced)
     (effects
       (font (size 1.27 1.27))
       (justify left))
-    (uuid 2ac09de1-ba18-5e1a-b634-86aeb1b57440)
+    (uuid 01607f60-e06d-50c8-b04d-987bebd742b6)
     (property "Intersheetrefs" "${INTERSHEET_REFS}"
-      (at 93.98 36.83 0)
+      (at 93.98 34.29 0)
       (effects
         (font (size 1.27 1.27)) hide)))
   (wire
     (pts
-      (xy 93.98 46.99)
-      (xy 93.98 49.53))
+      (xy 93.98 44.45)
+      (xy 93.98 46.99))
     (stroke
       (width 0)
       (type default))
-    (uuid 00d782c5-1244-5cd9-88cc-264ca6647893))
+    (uuid 252276ab-be7b-5987-a315-be0b9937800e))
   (global_label "GND"
     (shape passive)
-    (at 93.98 49.53 270)
+    (at 93.98 46.99 270)
     (fields_autoplaced)
     (effects
       (font (size 1.27 1.27))
       (justify right))
-    (uuid 1792b8c6-cb63-5e68-aeed-31c1ed55210d)
+    (uuid aaeacc33-451c-5c56-b2eb-5494542e4883)
     (property "Intersheetrefs" "${INTERSHEET_REFS}"
-      (at 93.98 49.53 0)
+      (at 93.98 46.99 0)
       (effects
         (font (size 1.27 1.27)) hide)))
   (wire
@@ -1189,7 +1189,7 @@
       (effects
         (font (size 1.27 1.27))
         (justify left)))
-    (property "Value" "ESP32-WROOM-32"
+    (property "Value" "ESP32-WROOM-32E"
       (at 27.94 114.16 0)
       (effects
         (font (size 1.27 1.27))
@@ -1354,28 +1354,28 @@
     (unit 1)))))
   (symbol
     (lib_id "Device:C")
-    (at 93.98 43.18 0)
+    (at 93.98 40.64 0)
     (unit 1)
     (in_bom yes)
     (on_board yes)
     (dnp no)
     (uuid 21df571a-53f4-5413-a87e-2e428ad037d6)
     (property "Reference" "C121"
-      (at 91.948 37.77 0)
+      (at 91.948 35.23 0)
       (effects
         (font (size 1.27 1.27))
         (justify left)))
     (property "Value" "100nF"
-      (at 91.948 49.39 0)
+      (at 91.948 46.85 0)
       (effects
         (font (size 1.27 1.27))
         (justify left)))
     (property "Footprint" "Capacitor_SMD:C_0805_2012Metric"
-      (at 93.98 43.18 0)
+      (at 93.98 40.64 0)
       (effects
         (font (size 1.27 1.27)) hide))
     (property "Datasheet" "~"
-      (at 93.98 43.18 0)
+      (at 93.98 40.64 0)
       (effects
         (font (size 1.27 1.27)) hide))
     (pin "1"

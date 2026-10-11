@@ -248,7 +248,10 @@ pull-down so contactors stay off while the MCU is in reset.
 
 ### 4.12 CAN, ESP32, programming (REUSE)
 SN65HVD234 at 3.3 V on PA11/PA12, 120 Ω termination (0 Ω link to make it optional).
-ESP32-WROOM-32 on PB10/PB11 with its 6-pin programming header. SWD 3-pin header.
+ESP32 WiFi exactly as the V6 (IC14): ESP32-WROOM-32E (M113EH2800PH3Q0, PCB antenna) on
+PB10/PB11. Supply through a 10 µH inductor, with 100 nF on the 3.3 V side and 10 µF on the
+module side. EN has 4.7 k to the module's 3.3 V and 100 nF to GND. The 6-pin programming
+header is the same as the V6: IO0, GND, GND, +5 V, RX, TX. SWD 3-pin header.
 
 ### 4.13 Auxiliary I/O header (NEW)
 On-board 2×6, 2.54 mm header for I/O that doesn't fit CN1 without using reserved OEM

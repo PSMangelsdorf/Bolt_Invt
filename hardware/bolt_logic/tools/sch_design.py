@@ -360,12 +360,13 @@ vh.add("J3", "Connector_Generic:Conn_02x06_Odd_Even", "AUX I/O",
 # =========================================================================
 wf = Sheet("wifi", "wifi.kicad_sch", "WiFi (ESP32)")
 ESP = "RF_Module:ESP32-WROOM-32"
-wf.add("U30", ESP, "ESP32-WROOM-32", "RF_Module:ESP32-WROOM-32",
+# As Tesla V6 IC14: ESP32-WROOM-32E (M113EH2800PH3Q0, PCB antenna); same land pattern as WROOM-32
+wf.add("U30", ESP, "ESP32-WROOM-32E", "RF_Module:ESP32-WROOM-32",
        nc_rest(ESP, {1: "GND", 2: "ESP_3V3", 3: "ESP_EN", 25: "ESP_IO0", 34: "USART_TX", 35: "USART_RX",
                      15: "GND", 38: "GND", 39: "GND"}))
 wf.add("L30", "Device:L", "10uH", "Inductor_SMD:L_0805_2012Metric", {1: "+3V3", 2: "ESP_3V3"})
 wf.c("C120", "10uF", "ESP_3V3", "GND", fp=C1206)
-wf.c("C121", "100nF", "ESP_3V3", "GND")
+wf.c("C121", "100nF", "+3V3", "GND")              # V6 C11 sits on the 3.3 V side of the inductor
 wf.r("R130", "4.7k", "ESP_3V3", "ESP_EN")
 wf.c("C122", "100nF", "ESP_EN", "GND")
 wf.add("J4", "Connector_Generic:Conn_01x06", "ESP PROG", "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical",
