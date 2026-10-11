@@ -1,0 +1,4 @@
+(version 1)
+(rule "THT GND pins: one pour spoke is enough"
+  (condition "A.Pad_Type == 'Through-hole'")
+  (constraint min_resolved_spokes 1))

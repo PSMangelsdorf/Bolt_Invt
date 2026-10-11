@@ -14,6 +14,7 @@ Usage (needs KiCad's python, e.g. `python3` with pcbnew importable):
 """
 import math
 import os
+import re
 import sys
 
 import pcbnew
@@ -266,7 +267,12 @@ def main():
         if lib_fp.IsFlipped():
             lib_fp.Flip(lib_fp.GetPosition(), True)
         lib_fp.SetPosition(VECTOR2I(0, 0)); lib_fp.SetOrientationDegrees(0)
+        path = os.path.join(LIB_DIR, name + ".kicad_mod")
+        old = open(path).read() if os.path.exists(path) else None
         pcbnew.FootprintSave(LIB_DIR, lib_fp)
+        strip = lambda t: re.sub(r"\(tstamp [0-9a-f-]+\)", "", t)
+        if old is not None and strip(old) == strip(open(path).read()):
+            open(path, "w").write(old)                 # unchanged apart from random tstamps: keep file
 
     pcbnew.SaveBoard(PCB_FILE, board)
     txt = open(PCB_FILE).read()                       # page size isn't exposed in the
