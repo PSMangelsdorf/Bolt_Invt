@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "Bolt")(type "KiCad")(uri "${KIPRJMOD}/Bolt.kicad_sym")(options "")(descr "Bolt inverter logic board symbols"))
+)
