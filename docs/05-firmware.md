@@ -17,6 +17,7 @@ This implements the change list in `03-schematic-design.md` §7.
 | Temperatures | `src/vehiclecontrol.cpp`, `temp_meas` | Mux cycle 0 → 1 → 2. `tmphs` = hottest of the three module NTCs (CN2 17/19/21), using a new table for the FS800R07A2E3 NTC (5 k, B 3433) on 4.7 k to 3.3 V. `tmpm` = CN1 J1 on channel 0, using the sensor type set in `snsm`. Mux side 1 channels 1–3 are grounded. |
 | BMS input | `src/vehiclecontrol.cpp`, `src/stm32_sine.cpp` | None on this board (PC8 is the mux select), same handling as Tesla. A BMS signal still works over CAN. |
 | New value | `include/param_prj.h` | `din_gateok` (1 = gate board healthy; 2 = not applicable on other boards). |
+| Inputs this board doesn't have | `src/vehiclecontrol.cpp` | `din_emcystop` and `din_mprot` report 2 (n/a); the pins are pulled up to OK, so start-up logic is unchanged. `uaux` reports 0: other boards measure 12 V through a divider on PA3, while this board just has a pull-up there. The brake-light (PC5) and voltage-window (PC11) outputs still run, but their pins are unconnected. |
 | Defaults | `src/stm32_sine.cpp` | On first start, with no saved parameters, `il1gain` and `il2gain` are set to 2.25 instead of the stock 4.7. |
 | Tests | `test/test_bolt.cpp` | NTC table points and limits, mux sequence, mux readings (hottest phase, motor sensor on channel 0), and `din_gateok`. The GPIO and ADC stubs now simulate pin state for pins a test configures. |
 
@@ -38,7 +39,7 @@ Not changed:
 
 ## 3. Bench commissioning order (no high voltage)
 
-1. **12 V only, no gate board.** Check `hwver` = 11 in the web UI or terminal. `din_desat` and `din_gateok` should read Error: the 100 k pull-downs on the status inputs read as a fault when no gate board is present.
+1. **12 V only, no gate board.** Check `hwver` = 11 in the web UI or terminal. `din_emcystop`/`din_mprot` show n/a and `uaux` 0. `din_desat` and `din_gateok` should read Error: the 100 k pull-downs on the status inputs read as a fault when no gate board is present.
 2. **Add the gate board, still 12 V only.** Within a second of boot, `din_desat` and `din_gateok` should go to OK. Then check the following:
    - `tmphs` reads close to room temperature.
    - `il1` and `il2` read close to 0 A. If not, set the offsets.
@@ -60,5 +61,6 @@ Decided (owner):
   trips straight away and reports the reason (`DESAT` or `GATEBOARD`).
 - **Aux-header temperature:** dropped. The aux header is removed from the board (`03`
   §4.13), mux side 1 channels 1–3 are grounded, and only the motor sensor is read.
-- **Emergency stop / motor protection:** no inputs on this board. Pull-ups hold `din_emcystop`
-  and `din_mprot` at OK, so the stock firmware needs no change.
+- **Emergency stop / motor protection:** no inputs on this board. Pull-ups hold both pins at
+  OK, so start-up logic is unchanged; the values report n/a.
+- **Test pads TP1/TP2** (CN2 pins 20/18) stay on the board for the pin-18 bench measurement.
