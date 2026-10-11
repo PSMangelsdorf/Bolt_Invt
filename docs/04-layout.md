@@ -68,9 +68,16 @@ python3 tools/gen_route.py    # plane, pre-route, FreeRouting x2, GND vias, pour
    fixed wires from its SES, so the import starts from the board that already holds the
    pre-routes.
 5. **Cleanup and completion.**
-   - Router leftovers that KiCad's DRC flags as dangling are deleted.
-   - Any connection still open is closed with a straight or L track, on whichever layer is
-     clear, adding a via where it has to change layer.
+   - Router leftovers that KiCad's DRC flags as dangling (tracks, and vias connected on one
+     layer only) are deleted.
+   - Any connection still open is closed in this order, using the first that works:
+     1. A straight or L track, with a via where it has to change layer.
+     2. A grid search (0.05 mm grid, F/In2/B, through vias) between the two connected copper
+        clusters.
+     3. The same search allowed to cross other nets' tracks at a cost. The crossed tracks are
+        ripped up and their nets closed again, up to 4 rounds. New copper is never ripped.
+   - FreeRouting's own second pass is skipped by default. FreeRouting 1.9 reproducibly hangs
+     on it ("normalization of net OCUR_OK failed").
 6. **GND stitching grid** (about 7 mm). It ties the F/In2/B pours to the In1 plane, kept out
    of component bodies.
 7. **GND pours on F/In2/B, filled.**
@@ -104,7 +111,7 @@ left tab at y ≈ 40–74; CN2 runs along the bottom-left at y ≈ 13–16, x �
 | Vehicle inputs (dividers, filters, polyfuses) | x 68…118, y 46…80 | Between CN1 and the MCU |
 | Low-side / high-side outputs | x 66…128, y 82…104 | Along the top edge |
 | Aux header J3 | x 140…170, y 84…104 | |
-| ESP32-WROOM-32UE | x 196…272, y 4…47 | Far right; the u.FL faces the board edge |
+| ESP32-WROOM-32E (as V6) | x 196…244, y −5…21 | On the bottom edge, between H5 and H11, with the antenna end flush with the edge (Espressif placement guidance). The footprint's antenna keep-out is 48 mm wide, covers the last ~6 mm of board on all four copper layers, and has no copper, vias or pour. The bottom edge is the only stretch long enough with no mounting hole in it: on the right edge, H11/H12 leave only 43.5 mm. |
 
 Decoupling caps are placed against the pin they serve (`NEAR` table in `gen_layout.py`).
 Two-pin parts can rotate in 90° steps so that each pad faces its own net.
@@ -114,11 +121,11 @@ Two-pin parts can rotate in 90° steps so that each pad faces its own net.
 | | |
 |----|----|
 | Parts | 250 placed, every pad's net checked against the KiCad netlist |
-| Tracks | 2 453 segments: F.Cu 2.9 m, In2.Cu 4.4 m, B.Cu 1.8 m |
-| Vias | 812 (543 GND fan-out / stitching), 0.6 / 0.3 mm |
-| DRC | **0 clearance or short violations, 0 unconnected items** |
-| DRC warnings left | 17 silkscreen (reference text over pads / outlines), 199 `lib_footprint_issues` (see below) |
-| Gerbers / drill | Export cleanly with `kicad-cli` (checked; not committed until after review) |
+| Tracks | 2 460 segments: F.Cu 3.0 m, In2.Cu 4.3 m, B.Cu 1.7 m |
+| Vias | 823 (555 GND fan-out / stitching), 0.6 / 0.3 mm |
+| DRC | **0 clearance, short or keep-out violations; 0 unconnected items** |
+| DRC warnings left | 17 silkscreen (reference text over pads / outlines), 2 where the ESP32 outline meets the board edge (module flush with the edge, by design), 199 `lib_footprint_issues` (see below) |
+| Router-closed connections | 1 (VREF_1V65 in the resolver section) needed rip-up: parts of EXC_SK2, FWD_12V and THR1_IN were re-routed around it. All four are on the hand-review list (section 6, item 2). |
 
 Placement leaves the right ~55 % of the board almost empty: CN1 and CN2 are both on the
 left, so the circuitry clusters there. If the hand review wants more room (wider analog
@@ -144,8 +151,32 @@ right at little cost.
 | 4 | **PWM to CN2** | Six lines: check they are short, reference the In1 plane, and don't cross a plane gap. |
 | 5 | **Smart switches (Q1/Q2 BTS443P high-side, U20–U22 BTS133TC low-side)** | Add copper area on the tabs for heat; widen output traces if the load needs it. |
 | 6 | **CHASSIS** | Mounting-hole ring and the R7 tie to GND: confirm the single-point bond location. |
-| 7 | **WiFi** | WROOM-32UE needs a u.FL pigtail to an antenna outside the aluminium housing (or a bulkhead fitting). |
-| 8 | **Mechanical** | Housing height limits above the component side, and any lid or rib keep-outs, are still unknown. Tall parts: L1, electrolytics if any, CN1 header. |
-| 9 | **Pre-layout checklist** | `03-schematic-design.md` §8: L272D, BTS443P (TO-252-4 vs -5), BTS133TC, AP63205 values, CN1 hole sizes, CN2 height. |
-| 10 | **+3V3 trunk** | The router could only use one width per net, so +3V3 is 0.25 mm everywhere, and it feeds the ESP32, whose transmit peaks approach 0.5 A. Widen the trunk from U2 to the MCU / ESP32 area by hand, or give it a short In2 pour. |
-| 11 | **Silkscreen** | Clean up references; add board name, revision, CN2 pin 1, and the HV warning. |
+| 7 | **Mechanical** | Height is now checked (section 7). Any lid or rib keep-outs in the housing are still unknown. |
+| 8 | **Pre-layout checklist** | `03-schematic-design.md` §8: L272D, BTS443P (TO-252-4 vs -5), BTS133TC, AP63205 values, CN1 hole sizes, CN2 height. |
+| 9 | **+3V3 trunk** | The router could only use one width per net, so +3V3 is 0.25 mm everywhere, and it feeds the ESP32, whose transmit peaks approach 0.5 A. Widen the trunk from U2 to the MCU / ESP32 area by hand, or give it a short In2 pour. |
+| 10 | **Silkscreen** | Clean up references; add board name, revision, CN2 pin 1, and the HV warning. |
+
+## 7. Height limit
+
+Owner: about 7/8" (22.2 mm) maximum height, measured from the bottom of the board. That
+leaves about 20.2 mm above the component side of the 2.0 mm board. `gen_layout.py` checks
+every footprint against this, using datasheet maximum body heights, and fails on any part
+that is over the limit or has no height on file.
+
+| Part | Height (mm) | Margin |
+|----|----|----|
+| J1 SWD, J4 ESP programming, J3 aux (2.54 mm vertical headers) | 8.5 unmated | OK |
+| U20–U22 BTS133TC (TO-263) | 4.83 | OK |
+| L1 SRN6045TA | 4.5 | OK |
+| U30 ESP32-WROOM-32E | 3.35 | OK |
+| Everything else | ≤ 3.0 | OK |
+
+Points to check:
+- **J3 (aux I/O):** the only header that stays connected in the car. A mated 2.54 mm housing
+  is about 14–16 mm tall, and a cable leaving straight up needs bend room on top of that, so
+  it is tight under 20 mm. A right-angle or low-profile header would remove the issue.
+- **J1 / J4:** bench use only (programming), so mated height doesn't matter in service.
+- **CN1:** excluded from the check. Its height is set by the housing opening, and the header
+  part isn't chosen yet.
+- **CN2:** on the bottom side, mating with the gate board.
+

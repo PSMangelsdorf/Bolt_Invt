@@ -98,6 +98,11 @@ def populate(board, comps, nets):
             if not name.startswith("unconnected-"):
                 p.SetNet(netinfo[name])
         seen.add((ref, pin))
+    # library rule areas (ESP32 antenna keep-out) list F/In1/B only: extend them to every copper layer
+    for fp in board.GetFootprints():
+        for z in fp.Zones():
+            if z.GetIsRuleArea():
+                z.SetLayerSet(pcbnew.LSET.AllCuMask())
     # stock ESP32-WROOM footprint has 0.2 mm thermal-via drills; open them to the 0.3 mm board minimum
     for fp in board.GetFootprints():
         for p in fp.Pads():
@@ -141,21 +146,26 @@ GROUPS = [
      [(68, 46, 118, 80), (34, 63, 56, 76)]),
     ("out", ["U20", "U21", "U22", "R120", "R121", "R122"], [(66, 82, 128, 104)]),
     ("aux", ["J3", "F4"], [(140, 84, 170, 104)]),
-    ("wifi", ["U30", "L30", "C120", "C121", "R130", "C122", "J4"], [(196, 4, 272, 47)]),
+    ("wifi", ["U30", "L30", "C120", "C121", "R130", "C122", "J4"], [(180, 2, 262, 45)]),
 ]
-ANCHORS = {"U3": (88.0, 25.0, 0), "U30": (256.0, 26.0, 270)}   # ESP32 u.FL toward the right edge
+# ESP32-WROOM-32E (PCB antenna, as V6): antenna end of the module (local y = -15.75) flush with
+# the bottom board edge (y = -5), per Espressif's placement guidance. The footprint's 48 mm wide
+# antenna keep-out then covers the last ~6 mm of board under the antenna. The bottom edge between
+# H5 (x 141) and H11 (x 268) is the only edge stretch long enough with no mounting hole in it.
+ANCHORS = {"U3": (88.0, 25.0, 0), "U30": (220.0, -5.0 + 15.75, 180)}
 # decoupling / bulk caps: place next to a specific pad
 NEAR = {"C40": ("U4", "20"), "C46": ("U5", "14"), "C47": ("U6", "14"), "C54": ("U7", "8"), "C57": ("U8", "8"),
         "C60": ("U9", "3"), "C61": ("U10", "3"), "C62": ("U11", "16"), "C75": ("U12", "8"), "C79": ("U13", "4"),
         "C80": ("U13", "4"), "C84": ("U14", "8"), "C109": ("U23", "3"), "C20": ("U3", "19"), "C21": ("U3", "32"),
         "C22": ("U3", "48"), "C23": ("U3", "64"), "C24": ("U3", "1"), "C25": ("U3", "13"), "C26": ("U3", "13"),
-        "C27": ("U3", "7"), "C120": ("U30", "2"), "C121": ("U30", "2"), "C5": ("U1", "3"), "C1": ("U1", "3"),
+        "C27": ("U3", "7"), "L30": ("U30", "2"), "C120": ("U30", "2"), "C121": ("L30", "1"), "C5": ("U1", "3"), "C1": ("U1", "3"),
         "C2": ("U1", "3"), "C9": ("U1", "1"), "C7": ("L1", "2"), "C8": ("L1", "2"), "C10": ("U2", "3"),
         "C11": ("U2", "2"), "C6": ("U1", "5"), "C12": ("U2", "2"), "C13": ("FB1", "2"), "C14": ("FB1", "2"), "C15": ("Q2", "1"),
         "C16": ("Q2", "1"), "C3": ("D1", "1"), "C4": ("D1", "1"), "C28": ("Y1", "1"), "C29": ("Y1", "2"),
         "C30": ("Y2", "1"), "C31": ("Y2", "2")}
 STEP = 0.75
 GAP = 0.3
+GROUP_GAP = {}                      # per-group spacing override (mm), e.g. {"resolver": 1.0}
 
 
 def dbox(fp):
@@ -164,6 +174,21 @@ def dbox(fp):
     xa, ya = to_design(VECTOR2I(bb.GetLeft(), bb.GetTop()))
     xb, yb = to_design(VECTOR2I(bb.GetRight(), bb.GetBottom()))
     return min(xa, xb), min(ya, yb), max(xa, xb), max(ya, yb)
+
+
+def body_box(fp):
+    """Pads + fab outline only (the courtyard of a module with an antenna keep-out spans the
+    whole keep-out, which would block parts that belong right next to the module)."""
+    pts = []
+    for p in fp.Pads():
+        b = p.GetBoundingBox()
+        pts += [to_design(VECTOR2I(b.GetLeft(), b.GetTop())), to_design(VECTOR2I(b.GetRight(), b.GetBottom()))]
+    for g in fp.GraphicalItems():
+        if g.GetLayer() in (pcbnew.F_Fab, pcbnew.B_Fab) and g.GetClass() != "PCB_TEXT" and "TEXT" not in g.GetClass():
+            b = g.GetBoundingBox()
+            pts += [to_design(VECTOR2I(b.GetLeft(), b.GetTop())), to_design(VECTOR2I(b.GetRight(), b.GetBottom()))]
+    xs = [q[0] for q in pts]; ys = [q[1] for q in pts]
+    return min(xs), min(ys), max(xs), max(ys)
 
 
 def keepouts(board):
@@ -194,8 +219,9 @@ def inside_board(b):
     return True
 
 
-def overlap(a, b):
-    return not (a[2] + GAP <= b[0] or b[2] + GAP <= a[0] or a[3] + GAP <= b[1] or b[3] + GAP <= a[1])
+def overlap(a, b, gap=None):
+    gap = GAP if gap is None else gap
+    return not (a[2] + gap <= b[0] or b[2] + gap <= a[0] or a[3] + gap <= b[1] or b[3] + gap <= a[1])
 
 
 def place_all(board):
@@ -223,7 +249,12 @@ def place_all(board):
     failures = []
     for ref, (x, y, rot) in ANCHORS.items():
         fp = fps[ref]; fp.SetOrientationDegrees(rot); fp.SetPosition(P(x, y))
-        placed_boxes.append(dbox(fp)); record(fp)
+        placed_boxes.append(body_box(fp) if len(fp.Zones()) else dbox(fp)); record(fp)
+        for z in fp.Zones():                            # footprint rule areas (antenna keep-out)
+            bb = z.GetBoundingBox()
+            xa, ya = to_design(VECTOR2I(bb.GetLeft(), bb.GetTop()))
+            xb, yb = to_design(VECTOR2I(bb.GetRight(), bb.GetBottom()))
+            placed_boxes.append((min(xa, xb), min(ya, yb), max(xa, xb), max(ya, yb)))
 
     for gname, refs, regions in GROUPS:
         todo = [r for r in refs if r in fps and r not in ANCHORS]
@@ -239,7 +270,7 @@ def place_all(board):
                         y = ry0 - by0
                         while y + by1 <= ry1:
                             box = (x + bx0, y + by0, x + bx1, y + by1)
-                            if inside_board(box) and not any(overlap(box, o) for o in placed_boxes):
+                            if inside_board(box) and not any(overlap(box, o, GROUP_GAP.get(gname)) for o in placed_boxes):
                                 cost = 0.0
                                 if ref in NEAR:
                                     tr, tp = NEAR[ref]
@@ -271,6 +302,46 @@ def place_all(board):
             fp.SetOrientationDegrees(rot); fp.SetPosition(P(x, y))
             placed_boxes.append(box); record(fp)
     return failures
+
+
+# ------------------------------------------------------------------ height check
+# Owner: ~7/8" (22.2 mm) maximum height measured from the BOTTOM of the board, i.e. about
+# 20.2 mm above the component side with the 2.0 mm board. Values are datasheet / package
+# maximum body heights above the board surface (mm).
+HEIGHT_LIMIT = 22.2 - 2.0
+HEIGHTS = {
+    "R_0805_2012Metric": 0.6, "R_1206_3216Metric": 0.7, "R_Array_Convex_4x0603": 0.6,
+    "C_0805_2012Metric": 1.45, "C_1206_3216Metric": 1.8, "L_0805_2012Metric": 1.3,
+    "LED_0805_2012Metric": 1.1, "Fuse_1206_3216Metric": 1.3, "Fuse_1812_4532Metric": 3.0,
+    "Crystal_SMD_3215-2Pin_3.2x1.5mm": 0.9, "Crystal_SMD_5032-2Pin_5.0x3.2mm": 1.3,
+    "D_SMA": 2.44, "D_SMB": 2.62, "SOT-23": 1.2, "TSOT-23-6": 1.1, "SOT-223-3_TabPin2": 1.8,
+    "SOIC-8_3.9x4.9mm_P1.27mm": 1.75, "SOIC-14_3.9x8.7mm_P1.27mm": 1.75,
+    "SOIC-16_3.9x9.9mm_P1.27mm": 1.75, "SOIC-20W_7.5x12.8mm_P1.27mm": 2.65,
+    "LQFP-64_10x10mm_P0.5mm": 1.6, "TO-252-4": 2.4, "TO-263-2": 4.83,
+    "L_Bourns_SRN6045TA": 4.5, "ESP32-WROOM-32": 3.35,           # V6 BOM gives 3.35 mm for the -32E
+    "PinHeader_1x05_P2.54mm_Vertical": 8.5, "PinHeader_1x06_P2.54mm_Vertical": 8.5,
+    "PinHeader_2x06_P2.54mm_Vertical": 8.5,                      # unmated; see docs/04-layout.md
+    "TestPoint_Pad_D1.5mm": 0.0, "MountingHole_4.0mm_Pad6.5": 0.0, "NPTH_4.5mm": 0.0,
+}
+HEIGHT_EXEMPT = {"CN1": "vehicle connector: height set by the housing opening (part not yet chosen)",
+                 "CN2": "bottom side, mates with the gate board"}
+
+
+def check_heights(board):
+    rows, problems = [], []
+    for fp in board.GetFootprints():
+        ref, name = fp.GetReference(), str(fp.GetFPID().GetUniStringLibItemName())
+        if ref in HEIGHT_EXEMPT:
+            continue
+        h = HEIGHTS.get(name)
+        if h is None:
+            problems.append("%s (%s): no height on file" % (ref, name))
+        elif h > HEIGHT_LIMIT:
+            problems.append("%s (%s): %.1f mm > %.1f mm limit" % (ref, name, h, HEIGHT_LIMIT))
+        else:
+            rows.append((h, ref, name))
+    rows.sort(reverse=True)
+    return rows, problems
 
 
 # ------------------------------------------------------------------ board setup
@@ -348,6 +419,13 @@ if __name__ == "__main__":
     setup_board(board)
     fails = place_all(board)
     print("placement failures: %s" % (fails or "none"))
+    rows, problems = check_heights(board)
+    print("tallest parts (limit %.1f mm above the top surface): %s" % (
+        HEIGHT_LIMIT, ", ".join("%s %.1f" % (r, h) for h, r, _ in rows[:6])))
+    for pr in problems:
+        print("  HEIGHT: " + pr)
+    if problems:
+        sys.exit(1)
     pcbnew.SaveBoard(PCB, board)
     render(board, os.path.join(PROJ, "..", "..", "docs", "layout_placement.png"),
            "Bolt logic board - placement v0.1 (component side, ratsnest grey, GND omitted)")

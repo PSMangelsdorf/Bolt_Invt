@@ -189,6 +189,22 @@ CLR = 0.25           # mm, stitching via / stub clearance to foreign copper
 HOLE_GAP = 0.5       # mm, drill edge to drill edge
 
 
+def keepouts(board):
+    """Union of copper rule areas (ESP32 antenna keep-out), board mm coords."""
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+    mm = pcbnew.ToMM
+    polys = []
+    zones = list(board.Zones()) + [z for fp in board.GetFootprints() for z in fp.Zones()]
+    for z in zones:
+        if z.GetIsRuleArea():
+            ol = z.Outline()
+            for i in range(ol.OutlineCount()):
+                c = ol.Outline(i)
+                polys.append(Polygon([(mm(c.CPoint(k).x), mm(c.CPoint(k).y)) for k in range(c.PointCount())]))
+    return unary_union(polys)
+
+
 def _obstacles(board):
     """Shapely geometry (board mm coords) of non-GND copper per layer, all pads, and drills."""
     from shapely.geometry import LineString, Point, box
@@ -222,7 +238,8 @@ def _obstacles(board):
                 for l in layers:
                     if th or p.IsOnLayer(l):
                         foreign[l].append(g)
-    return ({l: unary_union(v) for l, v in foreign.items()}, unary_union(pads_f), unary_union(drills))
+    ko = keepouts(board)
+    return ({l: unary_union(v + [ko]) for l, v in foreign.items()}, unary_union(pads_f), unary_union(drills))
 
 
 def stitch(board, grid=7.0, lock=False):
@@ -346,16 +363,188 @@ def open_pairs(board):
     return pairs
 
 
-def complete(board):
-    """Close connections the router left open with a straight or L-shaped track, on whichever
-    layer is clear. Uses KiCad's DRC to find them (GND is left to the pours and stitching)."""
+def net_clusters(board, net):
+    """Own-net copper grouped into electrically connected clusters: [{layer: geometry}]."""
+    from shapely.geometry import LineString, Point, box
+    from shapely.ops import unary_union
+    mm = pcbnew.ToMM
+    L = (pcbnew.F_Cu, pcbnew.In2_Cu, pcbnew.B_Cu)
+    items = []
+    for t in board.GetTracks():
+        if t.GetNetname() != net:
+            continue
+        if t.GetClass() == "PCB_VIA":
+            items.append((set(L), Point(mm(t.GetPosition().x), mm(t.GetPosition().y)).buffer(mm(t.GetWidth()) / 2)))
+        elif t.GetLayer() in L:
+            items.append(({t.GetLayer()}, LineString([(mm(t.GetStart().x), mm(t.GetStart().y)),
+                                                       (mm(t.GetEnd().x), mm(t.GetEnd().y))]).buffer(mm(t.GetWidth()) / 2)))
+    for fp in board.GetFootprints():
+        for p in fp.Pads():
+            if p.GetNetname() == net:
+                bb = p.GetBoundingBox()
+                lays = set(L) if p.GetAttribute() == pcbnew.PAD_ATTRIB_PTH else {l for l in L if p.IsOnLayer(l)}
+                items.append((lays, box(mm(bb.GetLeft()), mm(bb.GetTop()), mm(bb.GetRight()), mm(bb.GetBottom()))))
+    parent = list(range(len(items)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]; i = parent[i]
+        return i
+    for i in range(len(items)):
+        for j in range(i + 1, len(items)):
+            if items[i][0] & items[j][0] and items[i][1].intersects(items[j][1]):
+                parent[find(i)] = find(j)
+    groups = {}
+    for i, (lays, g) in enumerate(items):
+        for l in lays:
+            groups.setdefault(find(i), {}).setdefault(l, []).append(g)
+    return [{l: unary_union(v) for l, v in grp.items()} for grp in groups.values()]
+
+
+def maze(board, net, src_map, dst_map, fo, outline, w, clr, grid=float(os.environ.get("MAZE_GRID", "0.05")), margin=6.0,
+         soft=None, soft_cost=0.5):
+    """Grid A* over F.Cu / In2.Cu / B.Cu (8-way moves, through vias) between two items of one net.
+    ga/gb: shapely geometries of the items, la/lb their copper layer (None = any layer).
+    fo: {layer: foreign copper}. Returns (segments [(layer, p0, p1)], vias [pt]) or None."""
+    import heapq
+    import numpy as np
+    import shapely
+    L = (pcbnew.F_Cu, pcbnew.In2_Cu, pcbnew.B_Cu)
+    from shapely.ops import unary_union
+    ga, gb = unary_union(list(src_map.values())), unary_union(list(dst_map.values()))
+    x0, y0, x1, y1 = ga.union(gb).bounds
+    x0 -= margin; y0 -= margin; x1 += margin; y1 += margin
+    nx, ny = int((x1 - x0) / grid) + 1, int((y1 - y0) / grid) + 1
+    xs = [float(v) for v in x0 + np.arange(nx) * grid]
+    ys = [float(v) for v in y0 + np.arange(ny) * grid]
+    X, Y = np.meshgrid(np.array(xs), np.array(ys), indexing="ij")
+    inside = shapely.contains_xy(outline.buffer(-(w / 2)), X, Y)
+    free, viaok = [], np.copy(inside)
+    for l in L:
+        g = fo.get(l)
+        f = inside.copy()
+        if g is not None and not g.is_empty:
+            f &= ~shapely.contains_xy(g.buffer(w / 2 + clr + grid * 0.75), X, Y)
+            viaok &= ~shapely.contains_xy(g.buffer(VIA_D / 2 + clr), X, Y)
+        free.append(f)
+    pen = [np.zeros_like(inside) for _ in L]
+    if soft:                                             # rip-up mode: soft copper is passable at a cost
+        for li, l in enumerate(L):
+            g = soft.get(l)
+            if g is not None and not g.is_empty:
+                pen[li] = shapely.contains_xy(g.buffer(w / 2 + clr + grid * 0.75), X, Y)
+    tol = grid * 0.75
+    # the two items' own copper already clears foreign copper: let the search run along it
+    for li, l in enumerate(L):
+        for m in (src_map, dst_map):
+            if l in m:
+                free[li] |= shapely.contains_xy(m[l].buffer(tol), X, Y)
+
+    def seeds(m):
+        out = []
+        for li, l in enumerate(L):
+            if l in m:
+                ii, jj = np.nonzero(shapely.contains_xy(m[l].buffer(tol), X, Y) & free[li])
+                out += [(li, int(i), int(j)) for i, j in zip(ii, jj)]
+        return out
+    src, dst = seeds(src_map), set(seeds(dst_map))
+    if os.environ.get("MAZE_DEBUG"):
+        print("  maze: grid %dx%d, free %s, via-ok %d, src %d, dst %d" % (
+            nx, ny, [int(f.sum()) for f in free], int(viaok.sum()), len(src), len(dst)))
+    if not src or not dst:
+        return None
+    tx, ty = gb.centroid.x, gb.centroid.y
+    h = lambda i, j: math.hypot(xs[i] - tx, ys[j] - ty)
+    VIA_COST = 2.0
+    dist, prev, pq = {}, {}, []
+    for n in src:
+        dist[n] = 0.0
+        heapq.heappush(pq, (h(n[1], n[2]), 0.0, n))
+    moves = [(1, 0, 1.0), (-1, 0, 1.0), (0, 1, 1.0), (0, -1, 1.0),
+             (1, 1, 1.4142), (1, -1, 1.4142), (-1, 1, 1.4142), (-1, -1, 1.4142)]
+    goal = None
+    while pq:
+        f, d, n = heapq.heappop(pq)
+        if d > dist.get(n, 1e18):
+            continue
+        if n in dst:
+            goal = n
+            break
+        li, i, j = n
+        nbrs = []
+        for di, dj, c in moves:
+            a, b = i + di, j + dj
+            if 0 <= a < nx and 0 <= b < ny and free[li][a, b]:
+                if di and dj and not (free[li][a, j] and free[li][i, b]):
+                    continue                             # no corner cutting
+                nbrs.append(((li, a, b), c * grid + (soft_cost if pen[li][a, b] else 0.0)))
+        if viaok[i, j]:
+            for lj in range(3):
+                if lj != li and free[lj][i, j]:
+                    nbrs.append(((lj, i, j), VIA_COST + (soft_cost * 6 if any(pen[k][i, j] for k in range(3)) else 0.0)))
+        for m, c in nbrs:
+            nd = d + c
+            if nd < dist.get(m, 1e18):
+                dist[m] = nd; prev[m] = n
+                heapq.heappush(pq, (nd + h(m[1], m[2]), nd, m))
+    if goal is None:
+        if os.environ.get("MAZE_DEBUG"):
+            print("  maze: no path, explored %d" % len(dist))
+        return None
+    path = [goal]
+    while path[-1] in prev:
+        path.append(prev[path[-1]])
+    path.reverse()
+    segs, vias = [], []
+    run = [path[0]]
+    for n in path[1:]:
+        if n[0] != run[-1][0]:                           # layer change = via
+            vias.append((xs[n[1]], ys[n[2]]))
+            if len(run) > 1:
+                segs.append((L[run[0][0]], run))
+            run = [n]
+        else:
+            run.append(n)
+    if len(run) > 1:
+        segs.append((L[run[0][0]], run))
+    out = []
+    for lay, pts in segs:                                # merge collinear steps into segments
+        pts = [(xs[i], ys[j]) for _, i, j in pts]
+        keep = [pts[0]]
+        for k in range(1, len(pts) - 1):
+            ax, ay = pts[k][0] - keep[-1][0], pts[k][1] - keep[-1][1]
+            bx, by = pts[k + 1][0] - pts[k][0], pts[k + 1][1] - pts[k][1]
+            if abs(ax * by - ay * bx) > 1e-9:
+                keep.append(pts[k])
+        keep.append(pts[-1])
+        out += [(lay, p0, p1) for p0, p1 in zip(keep[:-1], keep[1:])]
+    # tie the grid ends onto the items themselves
+    from shapely.geometry import Point
+    from shapely.ops import nearest_points
+    for node, m in ((path[0], src_map), (path[-1], dst_map)):
+        pt = (xs[node[1]], ys[node[2]])
+        geom = m[L[node[0]]]
+        if not geom.contains(Point(pt)):
+            q = nearest_points(geom, Point(pt))[0]
+            out.append((L[node[0]], (float(q.x), float(q.y)), pt))
+    return out, vias
+
+
+def complete(board, protected=None):
+    """Close connections the router left open: a straight or L-shaped track on whichever layer is
+    clear, else a grid search (through vias), else a grid search that may cross other nets'
+    tracks; those tracks are ripped up and their nets closed again on the next call (see
+    complete_all). Uses KiCad's DRC to find open connections (GND is left to pours/stitching).
+    Returns (closed, ripped)."""
+    protected = set() if protected is None else protected
+    ripped = 0
     from shapely.geometry import LineString, Point, Polygon
     from shapely.ops import nearest_points
     from gen_mech import P as Pd
     mm = pcbnew.ToMM
     pairs = open_pairs(board)
     if not pairs:
-        return 0
+        return 0, 0
     foreign_by_net = {}
     widths = net_widths(board)
     outline = Polygon([(mm(Pd(x, y).x), mm(Pd(x, y).y)) for x, y in outline_points()]).buffer(-0.4)
@@ -378,7 +567,7 @@ def complete(board):
         net = a[3]
         if net not in foreign_by_net:
             # obstacles excluding this net's own copper
-            fo = {}
+            fo, hard, soft_l = {}, {}, {}
             for t in board.GetTracks():
                 if t.GetNetname() == net:
                     continue
@@ -386,9 +575,15 @@ def complete(board):
                     g = Point(mm(t.GetPosition().x), mm(t.GetPosition().y)).buffer(mm(t.GetWidth()) / 2)
                     for l in (pcbnew.F_Cu, pcbnew.In2_Cu, pcbnew.B_Cu):
                         fo.setdefault(l, []).append(g)
+                        hard.setdefault(l, []).append(g)
                 else:
-                    fo.setdefault(t.GetLayer(), []).append(LineString(
-                        [(mm(t.GetStart().x), mm(t.GetStart().y)), (mm(t.GetEnd().x), mm(t.GetEnd().y))]).buffer(mm(t.GetWidth()) / 2))
+                    g = LineString([(mm(t.GetStart().x), mm(t.GetStart().y)),
+                                    (mm(t.GetEnd().x), mm(t.GetEnd().y))]).buffer(mm(t.GetWidth()) / 2)
+                    fo.setdefault(t.GetLayer(), []).append(g)
+                    if t.GetNetname() == "GND" or t.m_Uuid.AsString() in protected:
+                        hard.setdefault(t.GetLayer(), []).append(g)
+                    else:
+                        soft_l.setdefault(t.GetLayer(), []).append(g)
             for fp in board.GetFootprints():
                 for p in fp.Pads():
                     if p.GetNetname() == net:
@@ -399,9 +594,13 @@ def complete(board):
                     for l in (pcbnew.F_Cu, pcbnew.In2_Cu, pcbnew.B_Cu):
                         if p.GetAttribute() in (pcbnew.PAD_ATTRIB_PTH, pcbnew.PAD_ATTRIB_NPTH) or p.IsOnLayer(l):
                             fo.setdefault(l, []).append(g)
+                            hard.setdefault(l, []).append(g)
             from shapely.ops import unary_union
-            foreign_by_net[net] = {l: unary_union(v) for l, v in fo.items()}
-        fo = foreign_by_net[net]
+            ko = keepouts(board)
+            foreign_by_net[net] = ({l: unary_union(v + [ko]) for l, v in fo.items()},
+                                   {l: unary_union(v + [ko]) for l, v in hard.items()},
+                                   {l: unary_union(v) for l, v in soft_l.items()})
+        fo, fo_hard, fo_soft = foreign_by_net[net]
         (ga, la), (gb, lb) = geom(*a), geom(*b)
         w, clr = widths.get(net, (0.2, 0.2))
         ends = lambda g: [(c[0], c[1]) for c in g.coords] if g.geom_type == "LineString" else [(g.x, g.y)]
@@ -421,41 +620,110 @@ def complete(board):
             c = Point(pt).buffer(VIA_D / 2 + clr)
             return outline.contains(c) and not any(c.intersects(fo[l]) for l in fo)
 
-        ok = False
-        for lay in (pcbnew.In2_Cu, pcbnew.B_Cu, pcbnew.F_Cu):
-            for pa, pb in cand:
-                vias = [pt for pt, l in ((pa, la), (pb, lb)) if l is not None and l != lay and not has_via(pt)]
-                if not all(via_fits(v) for v in vias):
-                    continue
-                for path in ([pa, pb], [pa, (pb[0], pa[1]), pb], [pa, (pa[0], pb[1]), pb]):
-                    g = LineString(path)
-                    if not outline.contains(g) or g.buffer(w / 2 + clr).intersects(fo.get(lay, Point(-1e6, -1e6))):
+        from shapely.prepared import prep
+        pfo = {l: prep(g) for l, g in fo.items()}
+        blocked = lambda geom, l: l in pfo and pfo[l].intersects(geom)
+
+        def access(pt, lay_item):
+            """Ways to reach an item end: (point, layer or None for any, via point or None, stub)."""
+            if lay_item is None or has_via(pt):
+                return [(pt, None, None, None)]
+            out = [(pt, lay_item, None, None)]
+            for r in (0.8, 1.2, 1.6, 2.0, 2.6):
+                for k in range(16):
+                    an = 2 * math.pi * k / 16
+                    v = (pt[0] + r * math.cos(an), pt[1] + r * math.sin(an))
+                    stub = LineString([pt, v])
+                    if via_fits(v) and not blocked(stub.buffer(w / 2 + clr), lay_item):
+                        out.append((v, None, v, (lay_item, pt, v)))
+            return out
+
+        best = None
+        for pa0, pb0 in cand[:4]:
+            for (pa, la2, va, sa) in access(pa0, la):
+                for (pb, lb2, vb, sb) in access(pb0, lb):
+                    if va and vb and math.dist(va, vb) < VIA_D + 2 * clr and math.dist(va, vb) > 1e-6:
                         continue
-                    for s0, s1 in zip(path[:-1], path[1:]):
-                        if math.dist(s0, s1) < 1e-6:
+                    for lay in (pcbnew.In2_Cu, pcbnew.B_Cu, pcbnew.F_Cu):
+                        if (la2 is not None and la2 != lay) or (lb2 is not None and lb2 != lay):
                             continue
-                        t = pcbnew.PCB_TRACK(board)
-                        t.SetStart(VECTOR2I(FromMM(s0[0]), FromMM(s0[1]))); t.SetEnd(VECTOR2I(FromMM(s1[0]), FromMM(s1[1])))
-                        t.SetWidth(FromMM(w)); t.SetLayer(lay); t.SetNet(board.FindNet(net))
-                        board.Add(t)
-                    for vx, vy in vias:
-                        v = pcbnew.PCB_VIA(board)
-                        v.SetPosition(VECTOR2I(FromMM(vx), FromMM(vy)))
-                        v.SetViaType(pcbnew.VIATYPE_THROUGH); v.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-                        v.SetWidth(FromMM(VIA_D)); v.SetDrill(FromMM(VIA_DRILL)); v.SetNet(board.FindNet(net))
-                        board.Add(v)
-                    ok = True
-                    break
-                if ok:
-                    break
-            if ok:
+                        for path in ([pa, pb], [pa, (pb[0], pa[1]), pb], [pa, (pa[0], pb[1]), pb]):
+                            g = LineString(path)
+                            if not outline.contains(g) or blocked(g.buffer(w / 2 + clr), lay):
+                                continue
+                            nvia = (va is not None) + (vb is not None)
+                            cost = g.length + nvia * 3.0
+                            if best is None or cost < best[0]:
+                                best = (cost, lay, path, [x for x in (sa, sb) if x], [x for x in (va, vb) if x])
+                            break
+            if best:
                 break
+        segs = None
+        if best is not None:
+            _, lay, path, stubs, vias = best
+            segs = [(lay, s0, s1) for s0, s1 in zip(path[:-1], path[1:])] + [(l, p0, p1) for l, p0, p1 in stubs]
+        else:                                            # no straight / L route: grid search
+            cl = net_clusters(board, net)
+            pick = lambda pt: next((c for c in cl if any(g.distance(Point(pt)) < 0.02 for g in c.values())), None)
+            ca, cb = pick(a[:2]), pick(b[:2])
+            r = maze(board, net, ca, cb, fo, outline, w, clr) if ca and cb and ca is not cb else None
+            if r is None and ca and cb and ca is not cb:
+                r = maze(board, net, ca, cb, fo_hard, outline, w, clr, soft=fo_soft)
+                if r:                                    # rip up the foreign tracks the route crosses
+                    nseg = [(l, LineString([p0, p1]).buffer(w / 2 + clr)) for l, p0, p1 in r[0]]
+                    nvia = [Point(v).buffer(VIA_D / 2 + clr) for v in r[1]]
+                    dead = []
+                    for t in board.GetTracks():
+                        if t.GetClass() != "PCB_TRACK" or t.GetNetname() in (net, "GND") \
+                                or t.m_Uuid.AsString() in protected:
+                            continue
+                        tg = LineString([(mm(t.GetStart().x), mm(t.GetStart().y)),
+                                         (mm(t.GetEnd().x), mm(t.GetEnd().y))]).buffer(mm(t.GetWidth()) / 2)
+                        if any(l == t.GetLayer() and g.intersects(tg) for l, g in nseg) or \
+                                (t.GetLayer() in (pcbnew.F_Cu, pcbnew.In2_Cu, pcbnew.B_Cu) and any(v.intersects(tg) for v in nvia)):
+                            dead.append(t)
+                    print("  rip-up for %s: removing %d segment(s) of %s" % (
+                        net, len(dead), sorted({t.GetNetname() for t in dead})))
+                    for t in dead:
+                        board.Remove(t)
+                    ripped += len(dead)
+            if r:
+                segs, vias = r
+        ok = segs is not None
+        if ok:
+            for l, s0, s1 in segs:
+                if math.dist(s0, s1) < 1e-6:
+                    continue
+                t = pcbnew.PCB_TRACK(board)
+                t.SetStart(VECTOR2I(FromMM(s0[0]), FromMM(s0[1]))); t.SetEnd(VECTOR2I(FromMM(s1[0]), FromMM(s1[1])))
+                t.SetWidth(FromMM(w)); t.SetLayer(l); t.SetNet(board.FindNet(net))
+                board.Add(t)
+                protected.add(t.m_Uuid.AsString())
+            for vx, vy in vias:
+                v = pcbnew.PCB_VIA(board)
+                v.SetPosition(VECTOR2I(FromMM(vx), FromMM(vy)))
+                v.SetViaType(pcbnew.VIATYPE_THROUGH); v.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
+                v.SetWidth(FromMM(VIA_D)); v.SetDrill(FromMM(VIA_DRILL)); v.SetNet(board.FindNet(net))
+                board.Add(v)
         if ok:
             done += 1
             foreign_by_net.clear()
         else:
             print("  could not close %s: %s <-> %s" % (net, a[:3], b[:3]))
-    return done
+        if ripped:
+            break                                        # ripped nets show up as new open pairs
+    return done, ripped
+
+
+def complete_all(board, rounds=4):
+    """complete() until nothing is open or ripped; copper it adds is never ripped again."""
+    protected, total = set(), 0
+    for _ in range(rounds):
+        done, ripped = complete(board, protected)
+        total += done
+        if not ripped:
+            break
+    return total
 
 
 def remove_dangling(board):
@@ -470,6 +738,8 @@ def remove_dangling(board):
                            open(rep).read())
         dead = []
         for x, y, net, layer, length in found:
+            if net == "GND":                             # fan-out stubs end on vias the plane fill connects
+                continue
             for t in board.GetTracks():
                 if t.GetClass() == "PCB_TRACK" and t.GetNetname() == net and board.GetLayerName(t.GetLayer()) == layer \
                         and abs(mm(t.GetLength()) - float(length)) < 0.001 and t not in dead:
@@ -477,6 +747,16 @@ def remove_dangling(board):
                     if min(math.dist((sx, sy), (float(x), float(y))), math.dist((ex, ey), (float(x), float(y)))) < 0.01:
                         dead.append(t)
                         break
+        # vias connected on one layer only are dead ends too
+        for x, y, net in re.findall(r"\[via_dangling\].*?\n.*?\n\s*@\(([-\d.]+) mm, ([-\d.]+) mm\): Via \[([^\]]+)\]",
+                                    open(rep).read()):
+            if net == "GND":
+                continue
+            for t in board.GetTracks():
+                if t.GetClass() == "PCB_VIA" and t.GetNetname() == net and \
+                        math.dist((mm(t.GetPosition().x), mm(t.GetPosition().y)), (float(x), float(y))) < 0.01:
+                    dead.append(t)
+                    break
         if not dead:
             break
         for t in dead:
@@ -572,6 +852,7 @@ def prestub(board):
                 pads.append((p, (mm(p.GetPosition().x), mm(p.GetPosition().y)),
                              box(mm(bb.GetLeft()), mm(bb.GetTop()), mm(bb.GetRight()), mm(bb.GetBottom()))))
     stubs = {l: [] for l in (pcbnew.F_Cu, pcbnew.B_Cu)}          # layer -> [(net, geom)]
+    ko = keepouts(board)
     parent = {}
 
     def find(k):
@@ -608,6 +889,8 @@ def prestub(board):
                        if p.GetNetname() != net and (p.GetAttribute() == pcbnew.PAD_ATTRIB_PTH or p.IsOnLayer(lay))):
                     continue
                 if any(g.intersects(sg) for sn, sg in stubs[lay] if sn != net):
+                    continue
+                if g.intersects(ko):
                     continue
                 for s0, s1 in zip(path[:-1], path[1:]):
                     if math.dist(s0, s1) < 1e-6:
@@ -760,7 +1043,8 @@ def import_and_finish(dsn, ses, base):
     print("imported %d track segments, %d vias; removed %d dangling stubs" % (nt, nv, remove_dangling(board)))
     for t in board.GetTracks():
         t.SetLocked(False)                         # locks were only for the router
-    print("closed %d open connections directly" % complete(board))
+    print("closed %d open connections directly" % complete_all(board))
+    print("removed %d dangling stubs after completion" % remove_dangling(board))
     print("passive references moved to fab layer: %d" % tidy_silk(board))
     pv, gv = stitch(board)
     print("GND vias: %d beside SMD pads, %d stitching" % (pv, gv))
