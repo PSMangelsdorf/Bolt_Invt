@@ -815,17 +815,6 @@ def island_vias(board):
     return added
 
 
-def tidy_silk(board):
-    """Small passives carry their reference on the fab layer (assembly drawing) instead of silk:
-    on this density the silk references would sit on pads and on each other."""
-    n = 0
-    for fp in board.GetFootprints():
-        if fp.GetPadCount() <= 3 and fp.GetAttributes() & pcbnew.FP_SMD:
-            fp.Reference().SetLayer(pcbnew.B_Fab if fp.IsFlipped() else pcbnew.F_Fab)
-            n += 1
-    return n
-
-
 def finish(board):
     """GND pours on the signal layers, fill, tie orphan pour islands to the plane, refill."""
     for layer, prio in ((pcbnew.F_Cu, 1), (pcbnew.In2_Cu, 1), (pcbnew.B_Cu, 1)):
@@ -975,7 +964,7 @@ def main():
     if "--export-only" in sys.argv:
         pcbnew.ExportSpecctraDSN(board, d1); patch_dsn(d1, board)
         return
-    for (w, clr), nets in sorted(run_freerouting(board, d1, s1, os.environ.get("FR_PASSES", "100")).items()):
+    for (w, clr), nets in sorted(run_freerouting(board, d1, s1, os.environ.get("FR_PASSES", "40")).items()):
         print("  class %.2f/%.2f mm: %s" % (w, clr, " ".join(nets)))
     if stage2(d1, s1, d2, s2):
         import_and_finish(d2, s2, STAGE1)
@@ -1045,7 +1034,6 @@ def import_and_finish(dsn, ses, base):
         t.SetLocked(False)                         # locks were only for the router
     print("closed %d open connections directly" % complete_all(board))
     print("removed %d dangling stubs after completion" % remove_dangling(board))
-    print("passive references moved to fab layer: %d" % tidy_silk(board))
     pv, gv = stitch(board)
     print("GND vias: %d beside SMD pads, %d stitching" % (pv, gv))
     finish(board)

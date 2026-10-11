@@ -24,7 +24,7 @@ python3 tools/gen_layout.py   # netlist -> footprints, pad cross-check, placemen
 python3 tools/gen_route.py    # plane, pre-route + GND fan-out, FreeRouting x2, pours, DRC
 ```
 
-`gen_route.py` takes about 15–35 minutes, most of it FreeRouting. Its working files go to
+`gen_route.py` takes about 10–15 minutes, most of it FreeRouting. Its working files go to
 `route_work/` (not committed):
 - `--import-only` re-imports the last routing run.
 - `--stage2-only` keeps stage 1 and redoes only stage 2.
@@ -36,7 +36,7 @@ python3 tools/gen_route.py    # plane, pre-route + GND fan-out, FreeRouting x2, 
   `gen_route.py`, because it would overwrite the hand edits.
 - `tools/gen_mech.py`: single source of truth for mechanical dimensions.
 - `tools/sch_design.py`: the schematic design table (every part, every pin → net).
-- `tools/gen_layout.py`: placement regions (`GROUPS`), anchors, decoupling pairs (`NEAR`).
+- `tools/gen_layout.py`: placement regions (`GROUPS`), anchors, decoupling pairs (`NEAR`), the 10 mm CN1/CN2 clearance and the height check.
 - `tools/gen_route.py`: net classes, routing flow, GND stitching.
 - `Bolt.pretty/`, `Bolt.kicad_sym`: project footprint and symbol libraries.
 

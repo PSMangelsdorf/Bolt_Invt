@@ -60,7 +60,8 @@ python3 tools/gen_route.py    # plane, pre-route, FreeRouting x2, GND vias, pour
    plane, so the router works around them:
    - ICs (LQFP/SOIC) put the via inward, under the body.
    - Passives put it beside the pad.
-3. **FreeRouting stage 1.** A full autoroute, up to 100 passes. A stage-2 re-run on the
+3. **FreeRouting stage 1.** A full autoroute, up to 40 passes (more passes only made some runs
+   take over an hour; the completion step below closes what's left). A stage-2 re-run on the
    stage-1 result only happens if more than a few connections are left open. FreeRouting
    1.9 sometimes hangs on that re-run, so it has a timeout and falls back to stage 1.
 4. **SES import.** This is a custom importer, because KiCad 7's importer needs the GUI. It
@@ -85,9 +86,7 @@ python3 tools/gen_route.py    # plane, pre-route, FreeRouting x2, GND vias, pour
    - Islands without a connection are removed.
    - An island that only reaches GND through an SMD pad gets its own via, then the board is
      refilled.
-8. **Silkscreen.** Small passives carry their reference on the fab layer (assembly
-   drawing) rather than on silk.
-9. **DRC.** The report goes to `route_work/drc.rpt`. `bolt_logic.kicad_dru` accepts one
+8. **DRC.** The report goes to `route_work/drc.rpt`. `bolt_logic.kicad_dru` accepts one
    pour spoke on through-hole pads, since those are also tied to the In1 plane. The copper
    is rendered to `docs/layout_routed.png`.
 
@@ -96,22 +95,33 @@ committed board is the reviewed run.
 
 ## 3. Placement
 
-Parts are grouped by function in regions that follow the signal flow. Coordinates use the
-design frame from `02-mechanical.md` (origin H1, x to the right, y up). CN1 sits on the
-left tab at y ≈ 40–74; CN2 runs along the bottom-left at y ≈ 13–16, x ≈ 0–48.
+Parts are grouped by function into regions spread across the whole board, following the
+signal flow. Coordinates use the design frame from `02-mechanical.md` (origin H1, x to the
+right, y up). CN1 sits on the left tab at y ≈ 37–80; CN2 runs along the bottom left at
+x ≈ −2…50, y ≈ 11–18.
+
+Placement rules (`gen_layout.py`):
+- **Connector clearance (owner):** no component within **10 mm** of CN1 or CN2, for hand
+  soldering. It is measured from the connector's pads, locating holes and outline to each
+  part's pads and outline, and checked after placement (the run fails otherwise). In the
+  committed placement the nearest parts are Q1 at 12.2 mm from CN1 and U7 at 11.6 mm from
+  CN2. Tracks and vias may pass through the zone.
+- **Legible references:** each part's placement box includes its silkscreen reference, with
+  1.5 mm between boxes. So no reference sits on a pad or on another reference, and every
+  reference stays on the silkscreen.
 
 | Group | Region (x, y in mm) | Why there |
 |----|----|----|
-| Analog front end (current, UDC buffers, comparators, temperature mux) | x −2…36, y −3…41 | Next to the CN2 sensor pins |
-| Gate interface (PWM latch, fault logic, UDC divider) | x 36…66, y −3…41 | Next to the CN2 PWM / status pins |
-| MCU (STM32F103, crystals, SWD) | x 68…114, y 4…44 | Short PWM and ADC runs to both groups above |
-| Resolver / encoder | x 6…60, y 42…63 | Between CN1 (sensor pins) and the MCU ADC |
-| CAN | x 6…34, y 63…76 | Beside CN1 |
-| Power (TVS, 12 V switches, 5 V buck, 3.3 V LDO) | x 6…57, y 76…105 | Near CN1's battery and ignition pins |
-| Vehicle inputs (dividers, filters, polyfuses) | x 68…118, y 46…80 | Between CN1 and the MCU |
-| Low-side / high-side outputs | x 66…128, y 82…104 | Along the top edge |
-| Aux header J3 | x 140…170, y 84…104 | |
-| ESP32-WROOM-32E (as V6) | x 196…244, y −5…21 | On the bottom edge, between H5 and H11, with the antenna end flush with the edge (Espressif placement guidance). The footprint's antenna keep-out is 48 mm wide, covers the last ~6 mm of board on all four copper layers, and has no copper, vias or pour. The bottom edge is the only stretch long enough with no mounting hole in it: on the right edge, H11/H12 leave only 43.5 mm. |
+| Power (TVS, 12 V switches, 5 V buck, 3.3 V LDO) | x 12…105, y 80…106 | Near CN1's battery and ignition pins (rows K–M) |
+| CAN | x 12…45, y 48…78 | Beside CN1's CAN pins |
+| Resolver / encoder | x 12…105, y 48…80 | Between CN1's sensor pins and the MCU |
+| Analog front end (current, UDC buffers, comparators, temperature mux) | x 12…112, y 27…48 (+ strip below CN2) | Above CN2's sensor pins |
+| Gate interface (PWM latch, fault logic, UDC divider) | x 59…113, y −3…27 (+ strip below CN2) | Right of CN2's PWM / status pins |
+| MCU (STM32F103, crystals, SWD) | x 113…175, y 0…55, centred at (140, 28) | Board centre: short runs to every group |
+| Vehicle inputs (dividers, filters, polyfuses) | x 105…200, y 55…80 | |
+| Low-side / high-side outputs | x 105…200, y 80…106 | Along the top edge |
+| Aux header J3 | x 200…250, y 70…106 | |
+| ESP32-WROOM-32E (as V6) + support parts | x 175…262, y −5…55 | Module on the bottom edge, between H5 and H11, with the antenna end flush with the edge (Espressif placement guidance). The footprint's antenna keep-out is 48 mm wide, covers the last ~6 mm of board on all four copper layers, and has no copper, vias or pour. The bottom edge is the only stretch long enough with no mounting hole in it: on the right edge, H11/H12 leave only 43.5 mm. |
 
 Decoupling caps are placed against the pin they serve (`NEAR` table in `gen_layout.py`).
 Two-pin parts can rotate in 90° steps so that each pad faces its own net.
@@ -120,26 +130,20 @@ Two-pin parts can rotate in 90° steps so that each pad faces its own net.
 
 | | |
 |----|----|
-| Parts | 250 placed, every pad's net checked against the KiCad netlist |
-| Tracks | 2 460 segments: F.Cu 3.0 m, In2.Cu 4.3 m, B.Cu 1.7 m |
-| Vias | 823 (555 GND fan-out / stitching), 0.6 / 0.3 mm |
-| DRC | **0 clearance, short or keep-out violations; 0 unconnected items** |
-| DRC warnings left | 17 silkscreen (reference text over pads / outlines), 2 where the ESP32 outline meets the board edge (module flush with the edge, by design), 199 `lib_footprint_issues` (see below) |
-| Router-closed connections | 1 (VREF_1V65 in the resolver section) needed rip-up: parts of EXC_SK2, FWD_12V and THR1_IN were re-routed around it. All four are on the hand-review list (section 6, item 2). |
-
-Placement leaves the right ~55 % of the board almost empty: CN1 and CN2 are both on the
-left, so the circuitry clusters there. If the hand review wants more room (wider analog
-spacing, bigger copper areas for the switches), the vehicle-output and aux groups can move
-right at little cost.
+| Parts | 250 placed, every pad's net checked against the KiCad netlist; nothing within 10 mm of CN1/CN2 |
+| Tracks | 2 649 segments: F.Cu 4.5 m, In2.Cu 6.1 m, B.Cu 1.2 m |
+| Vias | 712 (486 GND fan-out / stitching), 0.6 / 0.3 mm |
+| DRC | **0 clearance, short or keep-out violations; 0 unconnected items; 0 silkscreen overlaps** |
+| DRC warnings left | 2 where the ESP32 outline meets the board edge (module flush with the edge, by design), 199 `lib_footprint_issues` (see below) |
+| Router-closed connections | 1, closed directly by the completion step (no rip-up needed) |
 
 ## 5. DRC items that are expected / environmental
 
 - `lib_footprint_issues`: this headless environment has no global footprint-library
   table, so DRC cannot compare footprints with the library. This does not happen in a
   normal KiCad install.
-- `silk_overlap` / `silk_over_copper`: reference designators. These are cosmetic
-  (fabs clip silk from pads). Clean them up in the final pass, or hide the passive
-  references.
+- `silk_edge_clearance` (2): the ESP32 module's outline runs to the board edge, because
+  the antenna end sits flush with the edge.
 
 ## 6. Hand-review list before fab
 
@@ -154,7 +158,7 @@ right at little cost.
 | 7 | **Mechanical** | Height is now checked (section 7). Any lid or rib keep-outs in the housing are still unknown. |
 | 8 | **Pre-layout checklist** | `03-schematic-design.md` §8: L272D, BTS443P (TO-252-4 vs -5), BTS133TC, AP63205 values, CN1 hole sizes, CN2 height. |
 | 9 | **+3V3 trunk** | The router could only use one width per net, so +3V3 is 0.25 mm everywhere, and it feeds the ESP32, whose transmit peaks approach 0.5 A. Widen the trunk from U2 to the MCU / ESP32 area by hand, or give it a short In2 pour. |
-| 10 | **Silkscreen** | Clean up references; add board name, revision, CN2 pin 1, and the HV warning. |
+| 10 | **Silkscreen** | References are placed and clear of each other. Still to add: board name, revision, CN2 pin 1, and the HV warning. |
 
 ## 7. Height limit
 

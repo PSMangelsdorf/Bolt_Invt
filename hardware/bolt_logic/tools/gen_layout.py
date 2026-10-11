@@ -123,36 +123,37 @@ def populate(board, comps, nets):
 # ------------------------------------------------------------------ placement data
 # Regions are lists of rectangles (x0, y0, x1, y1) in the design frame.
 GROUPS = [
-    # name, refs (prefix match on sheet groupings), regions
+    # name, refs, regions (x0, y0, x1, y1) in the design frame (origin H1, +y up).
+    # Kept clear: 10 mm around CN1 (left tab, y ~38-79) and CN2 (bottom left, x ~-1-48, y ~13-16).
     ("power", ["TVS1", "Q1", "R1", "R2", "R3", "D1", "C1", "C2", "C3", "C4", "C5", "U1", "C6", "L1", "C7", "C8",
                "C9", "U2", "C10", "C11", "C12", "FB1", "C13", "C14", "Q2", "R4", "R5", "R6", "C15", "C16", "R7"],
-     [(6, 76, 57, 105)]),
+     [(12, 80, 105, 106)]),
     ("mcu", ["U3", "C20", "C21", "C22", "C23", "C24", "L2", "C25", "C26", "C27", "R10", "R11", "Y1", "C28", "C29",
              "Y2", "C30", "C31", "LED1", "R12", "LED2", "R13", "J1", "R14"],
-     [(68, 4, 114, 44)]),
+     [(113, 0, 175, 55)]),
     ("gate", ["U4", "C40", "RN1", "RN2", "R20", "R21", "R22", "R23", "R24", "R25", "R26", "R27", "R28", "R29", "R30",
               "C41", "C42", "C43", "C44", "C45", "U5", "C46", "R31", "R32", "U6", "C47", "R33", "R34", "R35", "D2",
               "R36", "C48", "R37", "TP1", "TP2"],
-     [(36, 19, 66, 41), (50, -3, 66, 19), (44, -3, 50, 10)]),
+     [(59, -3, 113, 27), (44, -4, 59, 1)]),
     ("analog", ["U7", "U8", "U9", "U10", "U11", "R40", "R41", "R42", "R43", "R44", "R45", "R46", "R47", "R48", "C50",
                 "C51", "C52", "C53", "C54", "C55", "C56", "C57", "R49", "C58", "R50", "C59", "C60", "C61", "R51",
                 "C62", "R52", "R53", "R54", "R55", "R56", "C63", "C64", "C65", "C66", "C67"],
-     [(-2, 19, 36, 41), (4, -3, 34, 10)]),
+     [(12, 27, 112, 48), (-4, -4, 44, 1)]),
+    ("can", ["U23", "C109", "R123", "R124"], [(12, 48, 45, 78)]),
     ("resolver", ["U12", "U13", "U14"] + ["R%d" % i for i in range(60, 94) if i != 66] +
      ["C%d" % i for i in range(70, 90) if i != 74],
-     [(6, 42, 60, 63)]),
-    ("can", ["U23", "C109", "R123", "R124"], [(6, 63, 34, 76)]),
+     [(12, 48, 105, 80)]),
     ("vin", ["R%d" % i for i in range(100, 118)] + ["C%d" % i for i in range(100, 109)] + ["F1", "F2", "F3"],
-     [(68, 46, 118, 80), (34, 63, 56, 76)]),
-    ("out", ["U20", "U21", "U22", "R120", "R121", "R122"], [(66, 82, 128, 104)]),
-    ("aux", ["J3", "F4"], [(140, 84, 170, 104)]),
-    ("wifi", ["U30", "L30", "C120", "C121", "R130", "C122", "J4"], [(180, 2, 262, 45)]),
+     [(105, 55, 200, 80)]),
+    ("out", ["U20", "U21", "U22", "R120", "R121", "R122"], [(105, 80, 200, 106)]),
+    ("aux", ["J3", "F4"], [(200, 70, 250, 106)]),
+    ("wifi", ["U30", "L30", "C120", "C121", "R130", "C122", "J4"], [(175, 2, 262, 55)]),
 ]
 # ESP32-WROOM-32E (PCB antenna, as V6): antenna end of the module (local y = -15.75) flush with
 # the bottom board edge (y = -5), per Espressif's placement guidance. The footprint's 48 mm wide
 # antenna keep-out then covers the last ~6 mm of board under the antenna. The bottom edge between
 # H5 (x 141) and H11 (x 268) is the only edge stretch long enough with no mounting hole in it.
-ANCHORS = {"U3": (88.0, 25.0, 0), "U30": (220.0, -5.0 + 15.75, 180)}
+ANCHORS = {"U3": (140.0, 28.0, 0), "U30": (220.0, -5.0 + 15.75, 180)}
 # decoupling / bulk caps: place next to a specific pad
 NEAR = {"C40": ("U4", "20"), "C46": ("U5", "14"), "C47": ("U6", "14"), "C54": ("U7", "8"), "C57": ("U8", "8"),
         "C60": ("U9", "3"), "C61": ("U10", "3"), "C62": ("U11", "16"), "C75": ("U12", "8"), "C79": ("U13", "4"),
@@ -164,8 +165,22 @@ NEAR = {"C40": ("U4", "20"), "C46": ("U5", "14"), "C47": ("U6", "14"), "C54": ("
         "C16": ("Q2", "1"), "C3": ("D1", "1"), "C4": ("D1", "1"), "C28": ("Y1", "1"), "C29": ("Y1", "2"),
         "C30": ("Y2", "1"), "C31": ("Y2", "2")}
 STEP = 0.75
-GAP = 0.3
+GAP = 1.5                           # between placement boxes (which include the silk reference)
+CONNECTOR_CLEARANCE = 10.0          # owner: no components within 10 mm of CN1 / CN2 (hand soldering)
 GROUP_GAP = {}                      # per-group spacing override (mm), e.g. {"resolver": 1.0}
+
+
+def pbox(fp):
+    """Placement extent: dbox plus the silkscreen reference text, so references stay legible
+    (never on top of a neighbour)."""
+    x0, y0, x1, y1 = dbox(fp)
+    ref = fp.Reference()
+    if ref.IsVisible() and ref.GetLayer() in (pcbnew.F_SilkS, pcbnew.B_SilkS):
+        bb = ref.GetBoundingBox()
+        xa, ya = to_design(VECTOR2I(bb.GetLeft(), bb.GetTop()))
+        xb, yb = to_design(VECTOR2I(bb.GetRight(), bb.GetBottom()))
+        x0, y0, x1, y1 = min(x0, xa, xb), min(y0, ya, yb), max(x1, xa, xb), max(y1, ya, yb)
+    return x0, y0, x1, y1
 
 
 def dbox(fp):
@@ -200,10 +215,9 @@ def keepouts(board):
             r = 4.0 if ref not in ("H13", "H14") else 3.0
             ko.append((x - r, y - r, x + r, y + r))
         elif ref in ("CN1", "CN2"):
-            pts = [to_design(p.GetPosition()) for p in fp.Pads()]
-            xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
-            m = 2.2
-            ko.append((min(xs) - m, min(ys) - m, max(xs) + m, max(ys) + m))
+            x0, y0, x1, y1 = dbox(fp)                    # pads, locating holes and body outline
+            m = CONNECTOR_CLEARANCE
+            ko.append((x0 - m, y0 - m, x1 + m, y1 + m))
     ko.append((113.5, -6, 130, 3.5))                     # notch
     return ko
 
@@ -242,14 +256,14 @@ def place_all(board):
     def shape_at(fp, rot):
         fp.SetOrientationDegrees(rot)
         fp.SetPosition(P(0, 0))
-        x0, y0, x1, y1 = dbox(fp)
+        x0, y0, x1, y1 = pbox(fp)
         pads = [(to_design(p.GetPosition()), p.GetNetname(), p.GetNumber()) for p in fp.Pads()]
         return (x0, y0, x1, y1), pads
 
     failures = []
     for ref, (x, y, rot) in ANCHORS.items():
         fp = fps[ref]; fp.SetOrientationDegrees(rot); fp.SetPosition(P(x, y))
-        placed_boxes.append(body_box(fp) if len(fp.Zones()) else dbox(fp)); record(fp)
+        placed_boxes.append(body_box(fp) if len(fp.Zones()) else pbox(fp)); record(fp)
         for z in fp.Zones():                            # footprint rule areas (antenna keep-out)
             bb = z.GetBoundingBox()
             xa, ya = to_design(VECTOR2I(bb.GetLeft(), bb.GetTop()))
@@ -325,6 +339,23 @@ HEIGHTS = {
 }
 HEIGHT_EXEMPT = {"CN1": "vehicle connector: height set by the housing opening (part not yet chosen)",
                  "CN2": "bottom side, mates with the gate board"}
+
+
+def check_connector_clearance(board):
+    """Every component (pads + body, not mounting holes) must stay CONNECTOR_CLEARANCE from CN1/CN2."""
+    fps = {fp.GetReference(): fp for fp in board.GetFootprints()}
+    bad = []
+    for cn in ("CN1", "CN2"):
+        a = dbox(fps[cn])
+        for ref, fp in fps.items():
+            if ref in ("CN1", "CN2") or ref.startswith("H"):
+                continue
+            b = dbox(fp)
+            dx = max(a[0] - b[2], b[0] - a[2], 0.0); dy = max(a[1] - b[3], b[1] - a[3], 0.0)
+            d = math.hypot(dx, dy)
+            if d < CONNECTOR_CLEARANCE - 1e-6:
+                bad.append("%s is %.1f mm from %s" % (ref, d, cn))
+    return bad
 
 
 def check_heights(board):
@@ -419,7 +450,10 @@ if __name__ == "__main__":
     setup_board(board)
     fails = place_all(board)
     print("placement failures: %s" % (fails or "none"))
+    if fails:
+        sys.exit(1)
     rows, problems = check_heights(board)
+    problems += ["CLEARANCE: " + b for b in check_connector_clearance(board)]
     print("tallest parts (limit %.1f mm above the top surface): %s" % (
         HEIGHT_LIMIT, ", ".join("%s %.1f" % (r, h) for h, r, _ in rows[:6])))
     for pr in problems:
