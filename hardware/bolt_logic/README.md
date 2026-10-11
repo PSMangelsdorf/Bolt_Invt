@@ -4,7 +4,7 @@ Replacement logic board for the Chevrolet Bolt EV traction inverter.
 
 ## Current state
 
-- **Schematic v0.1:** 7 hierarchical sheets, 258 parts, 169 nets.
+- **Schematic v0.1:** 7 hierarchical sheets, 249 parts, 160 nets.
   - PDF: `../../docs/bolt_logic_schematic.pdf`
   - Design rationale: `../../docs/03-schematic-design.md`
 - **PCB v0.1:** placed and autorouted on 4 layers, with GND plane and pours. This is a first

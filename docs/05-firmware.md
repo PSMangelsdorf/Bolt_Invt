@@ -14,7 +14,7 @@ This implements the change list in `03-schematic-design.md` §7.
 | Output mode | `src/stm32_sine.cpp` | `outmode` always keeps the contactor on PC13 and the pump/fan on PB9. The stock code would remap one of them onto PA0, which is an input here. |
 | Gate supply | `src/stm32_sine.cpp` | The +12 V gate-driver supply is switched on once, at the end of init, after the PWM outputs are parked off. Until then the 1ED020I12 under-voltage lockout holds every IGBT off. |
 | Hardware trip | `src/pwmgeneration.cpp` | On a trip: GATE_FLT low (PC9) → `DESAT`; gate-board health low (PA0) → new error **`GATEBOARD`**; otherwise `DESAT` if there's no overcurrent, else `OVERCURRENT`. Emergency stop and motor protection aren't wired into this board's trip logic (as on V6), so they're not blamed for a trip. |
-| Temperatures | `src/vehiclecontrol.cpp`, `temp_meas` | Mux cycle 0 → 1 → 2. `tmphs` = hottest of the three module NTCs (CN2 17/19/21), using a new table for the FS800R07A2E3 NTC (5 k, B 3433) on 4.7 k to 3.3 V. `tmpm` = CN1 J1 on channel 0, using the sensor type set in `snsm`. The aux-header temperature (channel 1) is read but not used yet. |
+| Temperatures | `src/vehiclecontrol.cpp`, `temp_meas` | Mux cycle 0 → 1 → 2. `tmphs` = hottest of the three module NTCs (CN2 17/19/21), using a new table for the FS800R07A2E3 NTC (5 k, B 3433) on 4.7 k to 3.3 V. `tmpm` = CN1 J1 on channel 0, using the sensor type set in `snsm`. Mux side 1 channels 1–3 are grounded. |
 | BMS input | `src/vehiclecontrol.cpp`, `src/stm32_sine.cpp` | None on this board (PC8 is the mux select), same handling as Tesla. A BMS signal still works over CAN. |
 | New value | `include/param_prj.h` | `din_gateok` (1 = gate board healthy; 2 = not applicable on other boards). |
 | Defaults | `src/stm32_sine.cpp` | On first start, with no saved parameters, `il1gain` and `il2gain` are set to 2.25 instead of the stock 4.7. |
@@ -58,8 +58,7 @@ Decided (owner):
 - **Pump/fan output:** keep the stock fan logic (`outmode` 1/2 with `fanthresh`).
 - **Gate-board health at start:** no start interlock. A start with an unhealthy gate board
   trips straight away and reports the reason (`DESAT` or `GATEBOARD`).
-
-Open:
-- **Aux-header temperature** (J3 pin 5, spare input, see `03` §4.13): read on mux channel 1
-  but not used. Options are to give it its own value, fold it into `tmpm`, or drop it from
-  the board.
+- **Aux-header temperature:** dropped. The aux header is removed from the board (`03`
+  §4.13), mux side 1 channels 1–3 are grounded, and only the motor sensor is read.
+- **Emergency stop / motor protection:** no inputs on this board. Pull-ups hold `din_emcystop`
+  and `din_mprot` at OK, so the stock firmware needs no change.

@@ -25,7 +25,7 @@ Net classes are in `tools/gen_route.py`, `NETCLASSES`:
 
 | Class | Width / clearance (mm) | Nets |
 |----|----|----|
-| POWER | 0.8 / 0.3 | VBAT, VBAT_SW, VCC_12V, +12V_GATE, contactor/pump outputs, AUX_12V, SW_5V, resolver exciter (EXC_*) |
+| POWER | 0.8 / 0.3 | VBAT, VBAT_SW, VCC_12V, +12V_GATE, contactor/pump outputs, SW_5V, resolver exciter (EXC_*) |
 | SUPPLY | 0.5 / 0.2 | +5V, +3V3, +5V_A, VDDA, ESP_3V3, sensor 5 V rails, CHASSIS, Q1_IN/Q2_IN |
 | default | 0.2 / 0.2 | everything else |
 
@@ -36,7 +36,7 @@ actually applied. In the committed run:
 
 | Width / clearance (mm) | Nets |
 |----|----|
-| 0.8 / 0.3 | VBAT, contactor/pump outputs, AUX_12V, EXC_OA_C, EXC_P/N |
+| 0.8 / 0.3 | VBAT, contactor/pump outputs, EXC_OA_C, EXC_P/N |
 | 0.75 / 0.3 | VBAT_SW, +12V_GATE |
 | 0.55 / 0.3 | VCC_12V, SW_5V, EXC_OA/OB |
 | 0.5 / 0.2 | +5V, +5V_A, ESP_3V3, sensor 5 V rails, CHASSIS, Q1_IN/Q2_IN |
@@ -120,7 +120,6 @@ Placement rules (`gen_layout.py`):
 | MCU (STM32F103, crystals, SWD) | x 113…175, y 0…55, centred at (140, 28) | Board centre: short runs to every group |
 | Vehicle inputs (dividers, filters, polyfuses) | x 105…200, y 55…80 | |
 | Low-side / high-side outputs | x 105…200, y 80…106 | Along the top edge |
-| Aux header J3 | x 200…250, y 70…106 | |
 | ESP32-WROOM-32E (as V6) + support parts | x 175…262, y −5…55 | Module on the bottom edge, between H5 and H11, with the antenna end flush with the edge (Espressif placement guidance). The footprint's antenna keep-out is 48 mm wide, covers the last ~6 mm of board on all four copper layers, and has no copper, vias or pour. The bottom edge is the only stretch long enough with no mounting hole in it: on the right edge, H11/H12 leave only 43.5 mm. |
 
 Decoupling caps are placed against the pin they serve (`NEAR` table in `gen_layout.py`).
@@ -130,12 +129,13 @@ Two-pin parts can rotate in 90° steps so that each pad faces its own net.
 
 | | |
 |----|----|
-| Parts | 250 placed, every pad's net checked against the KiCad netlist; nothing within 10 mm of CN1/CN2 |
-| Tracks | 2 649 segments: F.Cu 4.5 m, In2.Cu 6.1 m, B.Cu 1.2 m |
-| Vias | 712 (486 GND fan-out / stitching), 0.6 / 0.3 mm |
+| Parts | 241 placed, every pad's net checked against the KiCad netlist; nothing within 10 mm of CN1/CN2 |
+| Connections | CN1, CN2, J1 (SWD), J4 (ESP32 programming); TP1/TP2 are bare test pads on CN2 pins 20/18 |
+| Tracks | 2 416 segments: F.Cu 4.0 m, In2.Cu 5.2 m, B.Cu 1.5 m |
+| Vias | 692 (476 GND fan-out / stitching), 0.6 / 0.3 mm |
 | DRC | **0 clearance, short or keep-out violations; 0 unconnected items; 0 silkscreen overlaps** |
 | DRC warnings left | 2 where the ESP32 outline meets the board edge (module flush with the edge, by design), 199 `lib_footprint_issues` (see below) |
-| Router-closed connections | 1, closed directly by the completion step (no rip-up needed) |
+| Router-closed connections | none needed |
 
 ## 5. DRC items that are expected / environmental
 
@@ -169,16 +169,13 @@ that is over the limit or has no height on file.
 
 | Part | Height (mm) | Margin |
 |----|----|----|
-| J1 SWD, J4 ESP programming, J3 aux (2.54 mm vertical headers) | 8.5 unmated | OK |
+| J1 SWD, J4 ESP programming (2.54 mm vertical headers) | 8.5 unmated | OK |
 | U20–U22 BTS133TC (TO-263) | 4.83 | OK |
 | L1 SRN6045TA | 4.5 | OK |
 | U30 ESP32-WROOM-32E | 3.35 | OK |
 | Everything else | ≤ 3.0 | OK |
 
 Points to check:
-- **J3 (aux I/O):** the only header that stays connected in the car. A mated 2.54 mm housing
-  is about 14–16 mm tall, and a cable leaving straight up needs bend room on top of that, so
-  it is tight under 20 mm. A right-angle or low-profile header would remove the issue.
 - **J1 / J4:** bench use only (programming), so mated height doesn't matter in service.
 - **CN1:** excluded from the check. Its height is set by the housing opening, and the header
   part isn't chosen yet.
