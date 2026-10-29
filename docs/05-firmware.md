@@ -45,7 +45,9 @@ Not changed:
    - `il1` and `il2` read close to 0 A. If not, set the offsets.
    - The temperature mux cycles (watch PC10/PC8 on a scope).
 3. **Gate supply in reset.** Hold the MCU in reset: +12V_GATE (CN2 31) must be off. The 10 k
-   pull-down on PA15 keeps Q2 off whenever the MCU isn't driving it.
+   pull-down on PA15 (R5) holds Q4, and so Q2, off whenever the MCU isn't driving it. Then
+   set PA15 high and check +12V_GATE comes up; with ignition off the whole board must draw
+   nothing (Q3 / Q1).
 4. **Hardware trip.** Start the inverter at zero throttle with the usual start conditions
    met. With no high voltage, set `udcsw` to 0 temporarily so it will start.
    - Pull one HEALTH line low (CN2 7–10): expect error `GATEBOARD`, and the PWM must stop.

@@ -55,11 +55,14 @@ def flag(sheet, n, net):
 # =========================================================================
 pw = Sheet("power", "power.kicad_sch", "Power")
 pw.add("TVS1", "Device:D_TVS", "SMBJ26CA", "Diode_SMD:D_SMB", {1: "VBAT", 2: "GND"})
-# Q1: logic power, enabled by ignition (VERIFY BTS443P pinout + IN thresholds)
+# Q1: logic power, enabled by ignition. BTS443P has no GND pin: it switches on when IN is
+# pulled to GND (input switch must sink ~0.7-1.2 mA; < 50 uA keeps it off), so Q3 pulls IN
+# low when IGN is high (10k/6.8k divider: ~4.9 V gate at 12 V IGN).
 pw.add("Q1", "Power_Management:BTS443P", "BTS443P", "Package_TO_SOT_SMD:TO-252-4",
        {1: "VBAT_SW", 2: "Q1_IN", 3: "VBAT", 4: "Q1_IS"})
-pw.r("R1", "10k", "IGN", "Q1_IN")
-pw.r("R2", "6.8k", "Q1_IN", "GND")
+pw.r("R1", "10k", "IGN", "Q1_G")
+pw.r("R2", "6.8k", "Q1_G", "GND")
+pw.add("Q3", "Transistor_FET:2N7002", "2N7002", "Package_TO_SOT_SMD:SOT-23", {1: "Q1_G", 2: "GND", 3: "Q1_IN"})
 pw.r("R3", "1k", "Q1_IS", "GND")
 pw.add("D1", "Device:D_Schottky", "SS54", "Diode_SMD:D_SMA", {1: "VCC_12V", 2: "VBAT_SW"})
 for i in range(4):
@@ -86,8 +89,11 @@ pw.c("C14", "100nF", "+5V_A", "GND")
 # Q2: gate-board 12 V, MCU-controlled (PA15), default off
 pw.add("Q2", "Power_Management:BTS443P", "BTS443P", "Package_TO_SOT_SMD:TO-252-4",
        {1: "+12V_GATE", 2: "Q2_IN", 3: "VCC_12V", 4: "Q2_IS"})
-pw.r("R4", "1k", "GATE_PWR_EN", "Q2_IN")
+# Q4 pulls Q2's IN low when PA15 is high (same active-low input as Q1). R5 holds the gate
+# below the 2N7002 threshold while PA15 is still JTDI with its internal pull-up at reset.
+pw.r("R4", "1k", "GATE_PWR_EN", "Q2_G")
 pw.r("R5", "10k", "GATE_PWR_EN", "GND")
+pw.add("Q4", "Transistor_FET:2N7002", "2N7002", "Package_TO_SOT_SMD:SOT-23", {1: "Q2_G", 2: "GND", 3: "Q2_IN"})
 pw.r("R6", "1k", "Q2_IS", "GND")
 pw.c("C15", "10uF 25V", "+12V_GATE", "GND", fp=C1206)
 pw.c("C16", "100nF", "+12V_GATE", "GND")

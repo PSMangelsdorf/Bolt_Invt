@@ -99,10 +99,10 @@ FT = 5 V-tolerant. Non-FT pins never see 5 V signals directly.
 
 ```
 CN1 M1/M4 (Batt+) ─ TVS1 SMBJ26CA
-   └─ Q1 BTS443P (IN ← IGN via 10k/6.8k) ─ VBAT_SW ─ D1 SS54 ─ VCC_12V
+   └─ Q1 BTS443P (IN ← Q3 2N7002 ← IGN via 10k/6.8k) ─ VBAT_SW ─ D1 SS54 ─ VCC_12V
          VCC_12V ─┬─ U1 AP63205WU buck (fixed 5.0 V) ─ +5V ─┬─ U2 LD1117-3.3 ─ +3V3
                   │                                          └─ FB1 ferrite ─ +5V_A (CN2 28/29)
-                  └─ Q2 BTS443P (IN ← PA15 GATE_PWR_EN, 10k pull-down) ─ +12V_GATE (CN2 31/33/35/37)
+                  └─ Q2 BTS443P (IN ← Q4 2N7002 ← PA15 GATE_PWR_EN, 10k pull-down) ─ +12V_GATE (CN2 31/33/35/37)
 CN1 L3 (IGN) ─ 124 kΩ ─ CN2 36/38   (replicates the OEM ~125 kΩ ignition sense)
 ```
 
@@ -111,6 +111,18 @@ CN1 L3 (IGN) ─ 124 kΩ ─ CN2 36/38   (replicates the OEM ~125 kΩ ignition s
   enabled by firmware after init; with it off the isolated gate supplies collapse and
   the 1ED020I12 UVLO holds every IGBT off. Both IS (current-sense) pins have 1 kΩ to
   GND. The OEM board has two DPAK parts in the same corner.
+- **BTS443P input (fixed in v0.1, owner-approved).** The BTS443P has no GND pin. It
+  switches on when IN is pulled to ground: the input switch has to sink 0.7–1.2 mA, and
+  under 50 µA keeps it off (Infineon datasheet, pin table and input specs). The first
+  schematic drove IN like a logic input. Q1's IN went to GND through 6.8 k, which left it
+  always on, and Q2's IN went to PA15 through 1 k, which the MCU could never switch off.
+  Each now has a 2N7002 (Q3, Q4) from IN to GND:
+  - **Q3** gate from the IGN divider (10 k / 6.8 k: about 4.9 V at 12 V IGN, 6.5 V at 16 V).
+  - **Q4** gate from PA15 through R4 (1 k). The existing R5 (10 k to GND) holds it below the
+    2N7002's 1 V minimum threshold while PA15 is still JTDI with its internal 30–50 k
+    pull-up at reset (≤ 0.8 V).
+  Polarity is unchanged for the firmware (PA15 high = gate power on), and the board
+  detection still sees PA15 pulled low.
 - **Buck: AP63205WU** (fixed 5.0 V, 2 A, 3.8–32 V input, synchronous), replacing the
   V6's RT8259 (~24 V input, 5.28 V with the V6 divider). The 32 V rating suits an
   automotive 12 V rail, and the exact 5.0 V keeps the gate board's 1ED020 VCC1 inside
@@ -359,7 +371,7 @@ BTS133TC.
 | Part | Check |
 |----|----|
 | **L272D** | Library symbol: V+ = 4, V− = 6, A = 3/13/14, B = 5/11/12. Confirm against ST's pin-connection figure (not readable as text). |
-| **BTS443P** | Pinout (OUT 1/5, IN 2, Vbb 3 = tab, IS 4), IN thresholds with 3.3 V drive (Q2) and the 10 k/6.8 k divider from IGN (Q1), footprint: library default TO-252-4 vs. the part's TO-252-5. |
+| **BTS443P** | **Checked (Infineon datasheet):** OUT 1/5, IN 2, Vbb 3 = tab, IS 4; package PG-TO252-5-11. The KiCad TO-252-4 footprint has pads 1, 2, 4, 5 plus the tab as pin 3, which matches. IN is pulled to GND to switch on, and the drive is fixed with Q3/Q4 (§4.1). Still to confirm: the lead pitch of the footprint (1.14 mm) against Infineon's package drawing. |
 | **BTS133TC** | TO-263 pad mapping (tab = D = pin 2) and that 3.3 V drive fully enhances it (V6 does this). |
 | **AP63205WU** | EN tied to VIN, input/output capacitor values. Inductor: 6.8 µH (as the AP63205 EVB) kept, owner-approved. |
 | **CN1** | Hole diameters (1.0 mm placeholder; rows M/L may use larger terminals). |

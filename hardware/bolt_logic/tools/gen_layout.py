@@ -126,8 +126,8 @@ def populate(board, comps, nets):
 GROUPS = [
     # name, refs, regions (x0, y0, x1, y1) in the design frame (origin H1, +y up).
     # Kept clear: 10 mm around CN1 (left tab, y ~38-79) and CN2 (bottom left, x ~-1-48, y ~13-16).
-    ("power", ["TVS1", "Q1", "R1", "R2", "R3", "D1", "C1", "C2", "C3", "C4", "C5", "U1", "C6", "L1", "C7", "C8",
-               "C9", "U2", "C10", "C11", "C12", "FB1", "C13", "C14", "Q2", "R4", "R5", "R6", "C15", "C16", "R7"],
+    ("power", ["TVS1", "Q1", "Q3", "R1", "R2", "R3", "D1", "C1", "C2", "C3", "C4", "C5", "U1", "C6", "L1", "C7", "C8",
+               "C9", "U2", "C10", "C11", "C12", "FB1", "C13", "C14", "Q2", "Q4", "R4", "R5", "R6", "C15", "C16", "R7"],
      [(12, 80, 105, 106)]),
     ("mcu", ["U3", "C20", "C21", "C22", "C23", "C24", "L2", "C25", "C26", "C27", "R10", "R11", "Y1", "C28", "C29",
              "Y2", "C30", "C31", "LED1", "R12", "LED2", "R13", "J1", "R14"],
@@ -160,7 +160,7 @@ NEAR = {"C40": ("U4", "20"), "C46": ("U5", "14"), "C47": ("U6", "14"), "C54": ("
         "C80": ("U13", "4"), "C84": ("U14", "8"), "C109": ("U23", "3"), "C20": ("U3", "19"), "C21": ("U3", "32"),
         "C22": ("U3", "48"), "C23": ("U3", "64"), "C24": ("U3", "1"), "C25": ("U3", "13"), "C26": ("U3", "13"),
         "C27": ("U3", "7"), "L30": ("U30", "2"), "C120": ("U30", "2"), "C121": ("L30", "1"), "C10": ("U2", "3"),
-        "C11": ("U2", "2"), "C12": ("U2", "2"), "C13": ("FB1", "2"), "C14": ("FB1", "2"), "C15": ("Q2", "1"),
+        "C11": ("U2", "2"), "C12": ("U2", "2"), "C13": ("FB1", "2"), "C14": ("FB1", "2"), "C15": ("Q2", "1"), "Q3": ("Q1", "2"), "Q4": ("Q2", "2"),
         "C16": ("Q2", "1"), "C3": ("D1", "1"), "C4": ("D1", "1"), "C28": ("Y1", "1"), "C29": ("Y1", "2"),
         "C30": ("Y2", "1"), "C31": ("Y2", "2")}
 STEP = 0.75
@@ -346,6 +346,36 @@ def place_all(board):
     return failures
 
 
+def clear_own_silk(board):
+    """Slide a reference off its own footprint's filled pin-1 mark (SOT-23 etc.): the
+    placer keeps references clear of other parts, not of their own outline. Moves text only,
+    outward from the footprint centre in 0.2 mm steps, and never onto another part."""
+    others = [(fp, fp.GetBoundingBox(False, False)) for fp in board.GetFootprints()]
+    moved = []
+    for fp in board.GetFootprints():
+        t = fp.Reference()
+        if not t.IsVisible() or t.GetLayer() != pcbnew.F_SilkS:
+            continue
+        # filled marks (pin-1 triangles); outline strokes are already kept clear by the footprint
+        silk = [g.GetBoundingBox() for g in fp.GraphicalItems()
+                if g.GetLayer() == pcbnew.F_SilkS and hasattr(g, "GetShape") and g.GetShape() == pcbnew.SHAPE_T_POLY]
+        hit = lambda: any(t.GetBoundingBox().Intersects(g) for g in silk)
+        if not hit():
+            continue
+        c, p0 = fp.GetPosition(), t.GetPosition()
+        dx, dy = p0.x - c.x, p0.y - c.y
+        d = math.hypot(dx, dy) or 1.0
+        for k in range(1, 9):
+            t.SetPosition(VECTOR2I(int(p0.x + dx / d * FromMM(0.2 * k)), int(p0.y + dy / d * FromMM(0.2 * k))))
+            tb = t.GetBoundingBox()
+            if not hit() and not any(o is not fp and tb.Intersects(b) for o, b in others):
+                moved.append(fp.GetReference())
+                break
+        else:
+            t.SetPosition(p0)
+    return moved
+
+
 # ------------------------------------------------------------------ height check
 # Owner: ~7/8" (22.2 mm) maximum height measured from the BOTTOM of the board, i.e. about
 # 20.2 mm above the component side with the 2.0 mm board. Values are datasheet / package
@@ -480,6 +510,7 @@ if __name__ == "__main__":
     print("placement failures: %s" % (fails or "none"))
     if fails:
         sys.exit(1)
+    print("references moved off their own silkscreen: %s" % (", ".join(clear_own_silk(board)) or "none"))
     rows, problems = check_heights(board)
     problems += ["CLEARANCE: " + b for b in check_connector_clearance(board)]
     print("tallest parts (limit %.1f mm above the top surface): %s" % (
