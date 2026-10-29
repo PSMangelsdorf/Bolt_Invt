@@ -34,6 +34,22 @@ SHEET_ORIGIN = (60.0, 200.0)
 # --------------------------------------------------------------------------
 BOARD_THICKNESS = 2.0
 
+# Stackup (mm). Owner: heavier copper on the outer layers (2 oz finished, 0.070 mm), as the
+# AP63205 datasheet suggests for heat; inner layers 1 oz (0.035 mm). Dielectric thicknesses are
+# nominal values that make up the 2.0 mm board; the fab's own stackup governs.
+STACKUP = [  # (layer name, type, thickness)
+    ("F.Mask", "Top Solder Mask", 0.01),
+    ("F.Cu", "copper", 0.070),
+    ("dielectric 1", "prepreg", 0.20),
+    ("In1.Cu", "copper", 0.035),
+    ("dielectric 2", "core", 1.37),
+    ("In2.Cu", "copper", 0.035),
+    ("dielectric 3", "prepreg", 0.20),
+    ("B.Cu", "copper", 0.070),
+    ("B.Mask", "Bottom Solder Mask", 0.01),
+]
+assert abs(sum(t for _, _, t in STACKUP) - BOARD_THICKNESS) < 1e-9
+
 BODY = dict(x0=-5.0, y0=-5.0, x1=273.0, y1=107.0)          # 278 x 112
 TAB = dict(x_outer=-16.0, y_lo=33.0, y_hi=85.0)             # 11 deep x 52 wide
 NOTCH = dict(cx=121.6, cy=-5.0, r=7.0)                       # bottom edge, semicircle
@@ -277,7 +293,34 @@ def main():
     pcbnew.SaveBoard(PCB_FILE, board)
     txt = open(PCB_FILE).read()                       # page size isn't exposed in the
     open(PCB_FILE, "w").write(txt.replace('(paper "A4")', '(paper "A3")', 1))  # v7 bindings
+    apply_stackup(PCB_FILE)
     print("wrote %s  (%d pad positions verified)" % (os.path.relpath(PCB_FILE, PROJ), n))
+
+
+def stackup_sexpr():
+    rows = ['      (layer "F.SilkS" (type "Top Silk Screen"))', '      (layer "F.Paste" (type "Top Solder Paste"))']
+    for name, kind, t in STACKUP:
+        extra = ' (material "FR4") (epsilon_r 4.5) (loss_tangent 0.02)' if kind in ("prepreg", "core") else ""
+        rows.append('      (layer "%s" (type "%s") (thickness %g)%s)' % (name, kind, t, extra))
+    rows += ['      (layer "B.Paste" (type "Bottom Solder Paste"))', '      (layer "B.SilkS" (type "Bottom Silk Screen"))',
+             '      (copper_finish "None")', '      (dielectric_constraints no)']
+    return "    (stackup\n" + "\n".join(rows) + "\n    )\n"
+
+
+def apply_stackup(path):
+    """Write STACKUP into the board file's setup section (the v7 bindings don't expose the
+    stackup). pcbnew keeps it through later load/save cycles. Replaces an existing one."""
+    txt = open(path).read()
+    i = txt.find("    (stackup")
+    if i >= 0:                                        # cut the old block (balanced parens)
+        depth, j = 0, txt.index("(", i)
+        while True:
+            depth += {"(": 1, ")": -1}.get(txt[j], 0); j += 1
+            if depth == 0:
+                break
+        txt = txt[:i] + txt[j:].lstrip("\n")
+    k = txt.index("  (setup\n") + len("  (setup\n")
+    open(path, "w").write(txt[:k] + stackup_sexpr() + txt[k:])
 
 
 if __name__ == "__main__":

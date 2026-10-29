@@ -19,6 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PROJ = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 from gen_mech import P, BODY, TAB, NOTCH, CHAMFER  # noqa: E402
+import buck_block  # noqa: E402
 
 PCB = os.path.join(PROJ, "bolt_logic.kicad_pcb")
 WORK = os.path.join(PROJ, "route_work")
@@ -292,6 +293,8 @@ def stitch(board, grid=7.0, lock=False):
     stubbed = {(t.GetStart().x, t.GetStart().y) for t in board.GetTracks()
                if t.GetClass() == "PCB_TRACK" and t.GetNetname() == "GND"}
     for fp in board.GetFootprints():
+        if fp.GetReference() in buck_block.REFS:      # buck block GND is drawn with its own vias
+            continue
         for p in fp.Pads():
             if p.GetNetname() != "GND" or p.GetAttribute() != pcbnew.PAD_ATTRIB_SMD:
                 continue
@@ -580,7 +583,7 @@ def complete(board, protected=None):
                     g = LineString([(mm(t.GetStart().x), mm(t.GetStart().y)),
                                     (mm(t.GetEnd().x), mm(t.GetEnd().y))]).buffer(mm(t.GetWidth()) / 2)
                     fo.setdefault(t.GetLayer(), []).append(g)
-                    if t.GetNetname() == "GND" or t.m_Uuid.AsString() in protected:
+                    if t.GetNetname() == "GND" or t.IsLocked() or t.m_Uuid.AsString() in protected:
                         hard.setdefault(t.GetLayer(), []).append(g)
                     else:
                         soft_l.setdefault(t.GetLayer(), []).append(g)
@@ -675,7 +678,7 @@ def complete(board, protected=None):
                     dead = []
                     for t in board.GetTracks():
                         if t.GetClass() != "PCB_TRACK" or t.GetNetname() in (net, "GND") \
-                                or t.m_Uuid.AsString() in protected:
+                                or t.IsLocked() or t.m_Uuid.AsString() in protected:
                             continue
                         tg = LineString([(mm(t.GetStart().x), mm(t.GetStart().y)),
                                          (mm(t.GetEnd().x), mm(t.GetEnd().y))]).buffer(mm(t.GetWidth()) / 2)
@@ -827,12 +830,53 @@ def finish(board):
     print("pour islands given a via: %d" % n)
 
 
+def block_copper(board):
+    """Draw the hand-designed 5 V buck copper (tools/buck_block.py) relative to U1 and lock it,
+    so FreeRouting and the clean-up passes treat it as fixed."""
+    u1 = board.FindFootprintByReference("U1")
+    assert round(u1.GetOrientationDegrees()) % 360 == buck_block.U1_ROT, "U1 not at its block orientation"
+    ux, uy = pcbnew.ToMM(u1.GetPosition().x), pcbnew.ToMM(u1.GetPosition().y)
+    at = lambda q: VECTOR2I(FromMM(ux + q[0]), FromMM(uy + q[1]))
+    layer = {"F.Cu": pcbnew.F_Cu, "B.Cu": pcbnew.B_Cu}
+    n = 0
+    for net, lay, w, pts in buck_block.TRACKS:
+        ni = board.FindNet(net); assert ni, net
+        for a, b in zip(pts[:-1], pts[1:]):
+            t = pcbnew.PCB_TRACK(board)
+            t.SetStart(at(a)); t.SetEnd(at(b)); t.SetWidth(FromMM(w)); t.SetLayer(layer[lay])
+            t.SetNet(ni); t.SetLocked(True); board.Add(t); n += 1
+    for net, x, y in buck_block.VIAS:
+        v = pcbnew.PCB_VIA(board)
+        v.SetPosition(at((x, y))); v.SetViaType(pcbnew.VIATYPE_THROUGH); v.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
+        v.SetWidth(FromMM(VIA_D)); v.SetDrill(FromMM(VIA_DRILL)); v.SetNet(board.FindNet(net))
+        v.SetLocked(True); board.Add(v)
+    return n, len(buck_block.VIAS)
+
+
+def is_block_copper(board, t):
+    """True for a track/via that is part of the hand-designed buck block (possibly split at a
+    junction by the router): same net, same layer, and lying on one of the block's paths."""
+    from shapely.geometry import LineString, Point
+    mm = pcbnew.ToMM
+    u1 = board.FindFootprintByReference("U1")
+    ux, uy = mm(u1.GetPosition().x), mm(u1.GetPosition().y)
+    net = t.GetNetname()
+    if t.GetClass() == "PCB_VIA":
+        x, y = mm(t.GetPosition().x) - ux, mm(t.GetPosition().y) - uy
+        return any(n == net and math.dist((x, y), (vx, vy)) < 0.01 for n, vx, vy in buck_block.VIAS)
+    g = LineString([(mm(t.GetStart().x) - ux, mm(t.GetStart().y) - uy), (mm(t.GetEnd().x) - ux, mm(t.GetEnd().y) - uy)])
+    lay = board.GetLayerName(t.GetLayer())
+    return any(n == net and l == lay and abs(mm(t.GetWidth()) - w) < 1e-3 and g.within(LineString(pts).buffer(0.02))
+               for n, l, w, pts in buck_block.TRACKS)
+
+
 def prestub(board):
     """Pre-route short same-net pad pairs (adjacent connector pins, decoupling caps, IC pin ties) as
     locked straight or L-shaped tracks. FreeRouting tends to box these pins in and give up on them."""
-    from shapely.geometry import LineString, box
+    from shapely.geometry import LineString, Point, box
     mm = pcbnew.ToMM
     widths = net_widths(board)
+    block = set(buck_block.REFS)
     pads = []
     for fp in board.GetFootprints():
         for p in fp.Pads():
@@ -841,6 +885,13 @@ def prestub(board):
                 pads.append((p, (mm(p.GetPosition().x), mm(p.GetPosition().y)),
                              box(mm(bb.GetLeft()), mm(bb.GetTop()), mm(bb.GetRight()), mm(bb.GetBottom()))))
     stubs = {l: [] for l in (pcbnew.F_Cu, pcbnew.B_Cu)}          # layer -> [(net, geom)]
+    for t in board.GetTracks():                                  # copper already drawn (buck block)
+        g = Point(mm(t.GetPosition().x), mm(t.GetPosition().y)).buffer(mm(t.GetWidth()) / 2) \
+            if t.GetClass() == "PCB_VIA" else \
+            LineString([(mm(t.GetStart().x), mm(t.GetStart().y)), (mm(t.GetEnd().x), mm(t.GetEnd().y))]).buffer(mm(t.GetWidth()) / 2)
+        for l in stubs:
+            if t.GetClass() == "PCB_VIA" or t.GetLayer() == l:
+                stubs[l].append((t.GetNetname(), g))
     ko = keepouts(board)
     parent = {}
 
@@ -854,6 +905,8 @@ def prestub(board):
         if not na or na == "GND":
             continue
         for pb, cb, _ in pads[i + 1:]:
+            if pb.GetParentAsString() in block and pa.GetParentAsString() in block:
+                continue                                         # drawn by block_copper()
             if pb.GetNetname() == na and math.dist(ca, cb) <= 4.0:
                 cands.append((math.dist(ca, cb), pa, ca, pb, cb))
     cands.sort(key=lambda c: c[0])
@@ -957,6 +1010,7 @@ def main():
         raise SystemExit("FreeRouting jar not found at %s (set FREEROUTING_JAR)" % JAR)
     board = pcbnew.LoadBoard(PCB)
     setup(board)
+    print("5 V buck block: %d locked track segments, %d vias" % block_copper(board))
     print("pre-routed %d short pad-to-pad connections" % prestub(board))
     print("GND fan-out: %d pad vias" % stitch(board, grid=None, lock=True)[0])
     pcbnew.SaveBoard(BASE, board)
@@ -1030,8 +1084,8 @@ def import_and_finish(dsn, ses, base):
     board = pcbnew.LoadBoard(base)
     nt, nv = import_ses(board, ses, dsn)
     print("imported %d track segments, %d vias; removed %d dangling stubs" % (nt, nv, remove_dangling(board)))
-    for t in board.GetTracks():
-        t.SetLocked(False)                         # locks were only for the router
+    for t in board.GetTracks():                    # router locks off; the buck block stays locked
+        t.SetLocked(is_block_copper(board, t))
     print("closed %d open connections directly" % complete_all(board))
     print("removed %d dangling stubs after completion" % remove_dangling(board))
     pv, gv = stitch(board)

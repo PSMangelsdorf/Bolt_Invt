@@ -20,6 +20,20 @@ Images: `layout_placement.png` (placement plus ratsnest), `layout_routed.png` (r
   which every standard 4-layer fab process can build.
 - Vias: 0.6 mm pad, 0.3 mm drill.
 - Copper-to-edge clearance: 0.4 mm.
+- **Copper weight (owner): 2 oz finished on the outer layers** (F.Cu, B.Cu), as the AP63205
+  datasheet suggests for heat; inner layers 1 oz. This is in the board's stackup
+  (`STACKUP` in `tools/gen_mech.py`); the dielectric thicknesses there are nominal, and the
+  fab's own 2.0 mm stackup governs. Order the board with 2 oz outer copper.
+- **2 oz fab limits.** Heavy copper raises the fab's minimum track and gap, and the
+  limits differ between fabs. The board passes DRC with every copper gap at 0.2 mm or more,
+  and its narrowest track is 0.2 mm. Component through-holes have at least 0.34 mm annular
+  ring.
+  - JLCPCB (4-layer, 2 oz outer): 0.15 / 0.15 mm track / gap, 0.254 mm PTH annular ring,
+    0.20 mm pad spacing. The board meets all of these.
+  - A fab that needs 10 / 10 mil (0.254 mm) at 2 oz, such as Seeed's online quote, would
+    not accept it: about 500 gaps and every 0.2 mm track are under that.
+  - The only rings under 0.254 mm are the ESP32 module's 0.6 / 0.3 mm thermal vias in its
+    GND pad, which fall under the via rule (pad ≥ hole + 0.1 mm).
 
 Net classes are in `tools/gen_route.py`, `NETCLASSES`:
 
@@ -125,14 +139,57 @@ Placement rules (`gen_layout.py`):
 Decoupling caps are placed against the pin they serve (`NEAR` table in `gen_layout.py`).
 Two-pin parts can rotate in 90° steps so that each pad faces its own net.
 
+### 3.1 5 V buck block (U1 AP63205 and its parts)
+
+A switching regulator's layout is part of the circuit, and the general placer only
+knows connectivity: in the first pass the input caps ended up 13–16 mm from U1 and the
+switching node was 18 mm of 0.55 mm track. So the buck is now a fixed, hand-designed block
+in `tools/buck_block.py`. `gen_layout.py` places it first, and `gen_route.py` draws its
+copper as locked tracks and vias before anything else, so the autorouter only connects
+VCC_12V into it and +5V out of it.
+
+The layout follows the AP63205 datasheet's layout guidance and the AP63205 EVB:
+
+```
+           U1 label  C6 label     L1 label
+    FB via o   [U1]  [C6]   +--------------+
+               VIN|GND  \_SW__|  L1 (SW|5V)  |
+    C5 label [C5 VIN|GND]      +--------------+
+    C1 label [C1 VIN|GND]  o   [C7 GND|5V]  C7 label
+    C2 label [C2 VIN|GND]  o   [C8 GND|5V]  C8 label
+                               [C9 GND|5V]  C9 label
+                     FB return o
+```
+
+| | Block | First pass |
+|----|----|----|
+| Input loop | C5 (100 nF) pads 1.8 mm from the VIN/GND pins, then C1 and C2 (10 µF) stacked below on 1 mm VIN and GND buses | input caps 13–16 mm away |
+| Bootstrap | C6 upright beside the BST/SW pins, about 2 mm away | ~19 mm |
+| SW node | one 1.5 mm wide strip, about 4.4 mm from the SW pin to L1 pad 1 | 18 mm of 0.55 mm track |
+| Output | C7, C8 (22 µF) and C9 (100 nF) under L1 on a 1 mm +5V bus; their GND ties straight across to the input-cap GND | routed |
+| GND | four vias in the input/output cap grounds to the In1 plane, plus the F.Cu pour | fan-out vias |
+| FB | U1 pin 1 senses +5V. It drops through a via next to the pin and runs on B.Cu to the output caps, with the In1 GND plane between it and the SW node | routed |
+
+![5 V buck block](buck_block.png)
+
+*`docs/buck_block.png`, made by `tools/render_block.py`: F.Cu red, B.Cu blue, pads gold.*
+
+The block's copper stays locked in the committed board, so a hand edit elsewhere in KiCad
+won't drag it, and the completion step's rip-up never touches it. The block's silkscreen references sit around its outside, level with their parts, since
+there's no room for a label beside each part. The GND fan-out step leaves the block's GND
+pads alone, because it has its own vias.
+
+Values are unchanged. The datasheet's typical circuit uses 4.7 µH; the board keeps
+6.8 µH (owner-approved), which is what the AP63205 EVB uses.
+
 ## 4. Results (committed run)
 
 | | |
 |----|----|
 | Parts | 241 placed, every pad's net checked against the KiCad netlist; nothing within 10 mm of CN1/CN2 |
 | Connections | CN1, CN2, J1 (SWD), J4 (ESP32 programming); TP1/TP2 are bare test pads on CN2 pins 20/18 |
-| Tracks | 2 416 segments: F.Cu 4.0 m, In2.Cu 5.2 m, B.Cu 1.5 m |
-| Vias | 692 (476 GND fan-out / stitching), 0.6 / 0.3 mm |
+| Tracks | 2 480 segments: F.Cu 4.1 m, In2.Cu 5.3 m, B.Cu 1.2 m |
+| Vias | 711 (498 GND fan-out / stitching / buck block), 0.6 / 0.3 mm |
 | DRC | **0 clearance, short or keep-out violations; 0 unconnected items; 0 silkscreen overlaps** |
 | DRC warnings left | 2 where the ESP32 outline meets the board edge (module flush with the edge, by design), 199 `lib_footprint_issues` (see below) |
 | Router-closed connections | none needed |
@@ -149,7 +206,7 @@ Two-pin parts can rotate in 90° steps so that each pad faces its own net.
 
 | # | Area | What to do |
 |----|----|----|
-| 1 | **5 V buck (U1, L1, C1/C2/C5, C6, D1)** | Re-lay it by hand to the AP63205 datasheet layout: smallest input-cap loop, SW node as a short copper area rather than a track, FB away from SW. |
+| 1 | **5 V buck (U1, L1, C1/C2/C5, C6)** | **Done:** fixed block, §3.1. 6.8 µH kept; 2 oz outer copper chosen (§1). |
 | 2 | **Resolver exciter (U13 to CN1)** | EXC_* carries ~100 mA at 10 kHz. Keep it away from SIN/COS and run the pairs side by side. |
 | 3 | **Analog inputs (IL1, IL2, UDC, SIN/COS, temps)** | Check that no PWM or exciter track runs parallel on an adjacent layer. Add a GND guard where it does. |
 | 4 | **PWM to CN2** | Six lines: check they are short, reference the In1 plane, and don't cross a plane gap. |
