@@ -55,11 +55,15 @@ def flag(sheet, n, net):
 # =========================================================================
 pw = Sheet("power", "power.kicad_sch", "Power")
 pw.add("TVS1", "Device:D_TVS", "SMBJ26CA", "Diode_SMD:D_SMB", {1: "VBAT", 2: "GND"})
-# Q1: logic power, enabled by ignition (VERIFY BTS443P pinout + IN thresholds)
-pw.add("Q1", "Power_Management:BTS443P", "BTS443P", "Package_TO_SOT_SMD:TO-252-4",
+# Q1: logic power, enabled by ignition. BTS6143D (same PG-TO252-5-11 pinout as the BTS443P,
+# whose symbol is used; owner chose it because JLCPCB stocks it). No GND pin: it switches on
+# when IN is pulled to GND (input switch must sink up to 2.2 mA; < 30 uA keeps it off), so Q3
+# pulls IN low when IGN is high (10k/6.8k divider: ~4.9 V gate at 12 V IGN).
+pw.add("Q1", "Power_Management:BTS443P", "BTS6143D", "Package_TO_SOT_SMD:TO-252-4",
        {1: "VBAT_SW", 2: "Q1_IN", 3: "VBAT", 4: "Q1_IS"})
-pw.r("R1", "10k", "IGN", "Q1_IN")
-pw.r("R2", "6.8k", "Q1_IN", "GND")
+pw.r("R1", "10k", "IGN", "Q1_G")
+pw.r("R2", "6.8k", "Q1_G", "GND")
+pw.add("Q3", "Transistor_FET:2N7002", "2N7002", "Package_TO_SOT_SMD:SOT-23", {1: "Q1_G", 2: "GND", 3: "Q1_IN"})
 pw.r("R3", "1k", "Q1_IS", "GND")
 pw.add("D1", "Device:D_Schottky", "SS54", "Diode_SMD:D_SMA", {1: "VCC_12V", 2: "VBAT_SW"})
 for i in range(4):
@@ -84,10 +88,13 @@ pw.add("FB1", "Device:FerriteBead", "600R@100MHz 1A", "Inductor_SMD:L_0805_2012M
 pw.c("C13", "10uF", "+5V_A", "GND", fp=C1206)
 pw.c("C14", "100nF", "+5V_A", "GND")
 # Q2: gate-board 12 V, MCU-controlled (PA15), default off
-pw.add("Q2", "Power_Management:BTS443P", "BTS443P", "Package_TO_SOT_SMD:TO-252-4",
+pw.add("Q2", "Power_Management:BTS443P", "BTS6143D", "Package_TO_SOT_SMD:TO-252-4",
        {1: "+12V_GATE", 2: "Q2_IN", 3: "VCC_12V", 4: "Q2_IS"})
-pw.r("R4", "1k", "GATE_PWR_EN", "Q2_IN")
+# Q4 pulls Q2's IN low when PA15 is high (same active-low input as Q1). R5 holds the gate
+# below the 2N7002 threshold while PA15 is still JTDI with its internal pull-up at reset.
+pw.r("R4", "1k", "GATE_PWR_EN", "Q2_G")
 pw.r("R5", "10k", "GATE_PWR_EN", "GND")
+pw.add("Q4", "Transistor_FET:2N7002", "2N7002", "Package_TO_SOT_SMD:SOT-23", {1: "Q2_G", 2: "GND", 3: "Q2_IN"})
 pw.r("R6", "1k", "Q2_IS", "GND")
 pw.c("C15", "10uF 25V", "+12V_GATE", "GND", fp=C1206)
 pw.c("C16", "100nF", "+12V_GATE", "GND")
@@ -180,9 +187,12 @@ gi.add("U5", "74xx:74LS21", "74HC21", SOIC14, {
 gi.c("C46", "100nF", "+5V", "GND")
 gi.r("R31", "10k", "GATE_OK_5V", "GATE_OK")
 gi.r("R32", "20k", "GATE_OK", "GND")
-gi.add("U6", "74xx:74LS30", "CD74HCT30", SOIC14, {
-    1: "GATE_FLT_F", 2: "HEALTH1_F", 3: "HEALTH2_F", 4: "HEALTH3_F", 5: "HEALTH4_F", 6: "OCUR_OK",
-    11: "+5V", 12: "+5V", 8: "PWM_INHIBIT", 7: "GND", 14: "+5V"})
+# Hardware trip: PWM_INHIBIT = NAND(GATE_OK_5V, GATE_FLT_F, OCUR_OK). GATE_OK_5V is U5's AND of
+# HEALTH1-4, so this is the same logic as the earlier 8-input NAND. HCT so the 3.3 V OCUR_OK level
+# is valid at 5 V (owner: 74HCT10 instead of CD74HCT30, which JLCPCB doesn't stock).
+gi.add("U6", "74xx:74LS10", "74HCT10", SOIC14, {
+    1: "GATE_OK_5V", 2: "GATE_FLT_F", 13: "OCUR_OK", 12: "PWM_INHIBIT",
+    3: "GND", 4: "GND", 5: "GND", 6: "NC", 9: "GND", 10: "GND", 11: "GND", 8: "NC", 7: "GND", 14: "+5V"})
 gi.c("C47", "100nF", "+5V", "GND")
 gi.r("R33", "1k", "GATE_FLT_F", "GATE_FLT_MCU")
 # 4.7 DC bus voltage from CN2 18 (assumed), pin 20 held low
@@ -260,11 +270,14 @@ rs.r("R67", "10k", "VCC_12V", "EXC_VB")
 rs.r("R68", "10k", "EXC_VB", "GND")
 rs.c("C77", "10uF 25V", "EXC_VB", "GND", fp=C1206)
 rs.r("R69", "100k", "EXC_VB", "EXC_AC")
-# L272D bridge (VERIFY pinout against ST datasheet figure)
-rs.add("U13", "Amplifier_Operational:L272D", "L272D", SOIC16, {
-    13: "EXC_AC", 14: "EXC_FBA", 3: "EXC_OA",
-    12: "EXC_VB", 11: "EXC_FBB", 5: "EXC_OB",
-    4: "VCC_12V", 6: "GND"})
+# Exciter bridge: onsemi TCA0372DW dual 1 A power op-amp (owner: replaces the L272D, which
+# JLCPCB doesn't stock). Pinout from the datasheet's DW pin drawing, cross-checked with a second
+# source; GND pins 4/5/12/13 are also the heat path.
+rs.add("U13", "Bolt:TCA0372", "TCA0372DW", "Package_SO:SOIC-16W_7.5x10.3mm_P1.27mm", {
+    9: "EXC_AC", 10: "EXC_FBA", 16: "EXC_OA",
+    8: "EXC_VB", 7: "EXC_FBB", 2: "EXC_OB",
+    1: "VCC_12V", 4: "GND", 5: "GND", 12: "GND", 13: "GND",
+    3: "NC", 6: "NC", 11: "NC", 14: "NC", 15: "NC"})
 rs.r("R70", "20k", "EXC_OA", "EXC_FBA")
 rs.r("R71", "10k", "EXC_FBA", "EXC_RGA")
 rs.c("C78", "10uF 25V", "EXC_RGA", "GND", fp=C1206)
@@ -405,6 +418,19 @@ def write_custom_symbols(path):
                         [_pin("input", -7.62, 0, 0, "IN", "1"), _pin("passive", 0, 6.35, 270, "D", "2"),
                          _pin("passive", 0, -6.35, 90, "S", "3")],
                         "Smart low-side power switch (HITFET), TO-263"))
+    # TCA0372 (onsemi, DW = SOIC-16W): dual power op-amp, one box
+    syms.append(_symbol("TCA0372", "U", "TCA0372DW", "Package_SO:SOIC-16W_7.5x10.3mm_P1.27mm",
+                        (-7.62, -10.16, 7.62, 10.16),
+                        [_pin("input", -10.16, 7.62, 0, "+INA", "9"), _pin("input", -10.16, 5.08, 0, "-INA", "10"),
+                         _pin("input", -10.16, -2.54, 0, "+INB", "8"), _pin("input", -10.16, -5.08, 0, "-INB", "7"),
+                         _pin("output", 10.16, 6.35, 180, "OUTA", "16"), _pin("output", 10.16, -3.81, 180, "OUTB", "2"),
+                         _pin("power_in", 0, 12.7, 270, "VCC", "1"),
+                         _pin("power_in", -3.81, -12.7, 90, "GND", "4"), _pin("power_in", -1.27, -12.7, 90, "GND", "5"),
+                         _pin("power_in", 1.27, -12.7, 90, "GND", "12"), _pin("power_in", 3.81, -12.7, 90, "GND", "13"),
+                         _pin("no_connect", 10.16, 8.89, 180, "NC", "15"), _pin("no_connect", 10.16, 3.81, 180, "NC", "3"),
+                         _pin("no_connect", 10.16, 1.27, 180, "NC", "6"), _pin("no_connect", 10.16, -1.27, 180, "NC", "11"),
+                         _pin("no_connect", 10.16, -6.35, 180, "NC", "14")],
+                        "Dual power operational amplifier, 1 A, single or split supply up to 40 V"))
     # CN1: GM X1 48-way header; pin numbers = footprint pad names (A1..M4)
     order = ["%s%d" % (r, c) for r in "ABCDEFGHJKLM" for c in (1, 2, 3, 4)]
     pins = []

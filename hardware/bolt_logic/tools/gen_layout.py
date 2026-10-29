@@ -22,7 +22,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PROJ = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import kisym  # noqa: E402
-from gen_mech import P, to_design, SHEET_ORIGIN  # noqa: E402
+from gen_mech import P, to_design, SHEET_ORIGIN, CN1, CN2  # noqa: E402
 import buck_block  # noqa: E402
 
 PCB = os.path.join(PROJ, "bolt_logic.kicad_pcb")
@@ -30,7 +30,7 @@ SCH = os.path.join(PROJ, "bolt_logic.kicad_sch")
 SYS_FP = "/usr/share/kicad/footprints"
 FIXED = {"CN1", "CN2"} | {"H%d" % i for i in range(1, 15)}   # placed by gen_mech.py
 # package pins that are NC on the silicon and have no symbol pin (74HC21: 3, 11; 74HCT30: 9, 10, 13)
-PACKAGE_NC = {("U5", "3"), ("U5", "11"), ("U6", "9"), ("U6", "10"), ("U6", "13")}
+PACKAGE_NC = {("U5", "3"), ("U5", "11")}
 
 
 # ------------------------------------------------------------------ netlist
@@ -126,8 +126,8 @@ def populate(board, comps, nets):
 GROUPS = [
     # name, refs, regions (x0, y0, x1, y1) in the design frame (origin H1, +y up).
     # Kept clear: 10 mm around CN1 (left tab, y ~38-79) and CN2 (bottom left, x ~-1-48, y ~13-16).
-    ("power", ["TVS1", "Q1", "R1", "R2", "R3", "D1", "C1", "C2", "C3", "C4", "C5", "U1", "C6", "L1", "C7", "C8",
-               "C9", "U2", "C10", "C11", "C12", "FB1", "C13", "C14", "Q2", "R4", "R5", "R6", "C15", "C16", "R7"],
+    ("power", ["TVS1", "Q1", "Q3", "R1", "R2", "R3", "D1", "C1", "C2", "C3", "C4", "C5", "U1", "C6", "L1", "C7", "C8",
+               "C9", "U2", "C10", "C11", "C12", "FB1", "C13", "C14", "Q2", "Q4", "R4", "R5", "R6", "C15", "C16", "R7"],
      [(12, 80, 105, 106)]),
     ("mcu", ["U3", "C20", "C21", "C22", "C23", "C24", "L2", "C25", "C26", "C27", "R10", "R11", "Y1", "C28", "C29",
              "Y2", "C30", "C31", "LED1", "R12", "LED2", "R13", "J1", "R14"],
@@ -156,11 +156,11 @@ GROUPS = [
 ANCHORS = {"U3": (140.0, 28.0, 0), "U30": (220.0, -5.0 + 15.75, 180)}
 # decoupling / bulk caps: place next to a specific pad
 NEAR = {"C40": ("U4", "20"), "C46": ("U5", "14"), "C47": ("U6", "14"), "C54": ("U7", "8"), "C57": ("U8", "8"),
-        "C60": ("U9", "3"), "C61": ("U10", "3"), "C62": ("U11", "16"), "C75": ("U12", "8"), "C79": ("U13", "4"),
-        "C80": ("U13", "4"), "C84": ("U14", "8"), "C109": ("U23", "3"), "C20": ("U3", "19"), "C21": ("U3", "32"),
+        "C60": ("U9", "3"), "C61": ("U10", "3"), "C62": ("U11", "16"), "C75": ("U12", "8"), "C79": ("U13", "1"),
+        "C80": ("U13", "1"), "C84": ("U14", "8"), "C109": ("U23", "3"), "C20": ("U3", "19"), "C21": ("U3", "32"),
         "C22": ("U3", "48"), "C23": ("U3", "64"), "C24": ("U3", "1"), "C25": ("U3", "13"), "C26": ("U3", "13"),
         "C27": ("U3", "7"), "L30": ("U30", "2"), "C120": ("U30", "2"), "C121": ("L30", "1"), "C10": ("U2", "3"),
-        "C11": ("U2", "2"), "C12": ("U2", "2"), "C13": ("FB1", "2"), "C14": ("FB1", "2"), "C15": ("Q2", "1"),
+        "C11": ("U2", "2"), "C12": ("U2", "2"), "C13": ("FB1", "2"), "C14": ("FB1", "2"), "C15": ("Q2", "1"), "Q3": ("Q1", "2"), "Q4": ("Q2", "2"),
         "C16": ("Q2", "1"), "C3": ("D1", "1"), "C4": ("D1", "1"), "C28": ("Y1", "1"), "C29": ("Y1", "2"),
         "C30": ("Y2", "1"), "C31": ("Y2", "2")}
 STEP = 0.75
@@ -218,6 +218,7 @@ def keepouts(board):
             m = CONNECTOR_CLEARANCE
             ko.append((x0 - m, y0 - m, x1 + m, y1 + m))
     ko.append((113.5, -6, 130, 3.5))                     # notch
+    ko.append(TEXT_AREA)                                 # board text (board_silk)
     return ko
 
 
@@ -346,6 +347,120 @@ def place_all(board):
     return failures
 
 
+def clear_own_silk(board):
+    """Slide a reference off its own footprint's filled pin-1 mark (SOT-23 etc.): the
+    placer keeps references clear of other parts, not of their own outline. Moves text only,
+    outward from the footprint centre in 0.2 mm steps, and never onto another part."""
+    others = [(fp, fp.GetBoundingBox(False, False)) for fp in board.GetFootprints()]
+    moved = []
+    for fp in board.GetFootprints():
+        t = fp.Reference()
+        if not t.IsVisible() or t.GetLayer() != pcbnew.F_SilkS:
+            continue
+        # filled marks (pin-1 triangles); outline strokes are already kept clear by the footprint
+        silk = [g.GetBoundingBox() for g in fp.GraphicalItems()
+                if g.GetLayer() == pcbnew.F_SilkS and hasattr(g, "GetShape") and g.GetShape() == pcbnew.SHAPE_T_POLY]
+        hit = lambda: any(t.GetBoundingBox().Intersects(g) for g in silk)
+        if not hit():
+            continue
+        c, p0 = fp.GetPosition(), t.GetPosition()
+        dx, dy = p0.x - c.x, p0.y - c.y
+        d = math.hypot(dx, dy) or 1.0
+        for k in range(1, 9):
+            t.SetPosition(VECTOR2I(int(p0.x + dx / d * FromMM(0.2 * k)), int(p0.y + dy / d * FromMM(0.2 * k))))
+            tb = t.GetBoundingBox()
+            if not hit() and not any(o is not fp and tb.Intersects(b) for o, b in others):
+                moved.append(fp.GetReference())
+                break
+        else:
+            t.SetPosition(p0)
+    return moved
+
+
+# ------------------------------------------------------------------ board silkscreen
+# Owner's text, in the empty area between H7/H8/H9/H12 above the ESP32 (design frame, mm).
+TEXT_AREA = (196.0, 25.0, 262.0, 61.0)
+BOARD_TEXT = [  # (text, height mm, stroke mm)
+    ("OPEN INVERTER", 3.0, 0.45),
+    ("CHEVY BOLT INVERTER LOGIC BOARD V0.1", 1.8, 0.25),
+    ("OPENINVERTER.ORG", 1.8, 0.25),
+    ("COPYRIGHT 2026", 1.5, 0.2),
+    ("D. MAGUIRE", 1.5, 0.2),
+    ("J. HUEBNER", 1.5, 0.2),
+    ("I. KELLY", 1.5, 0.2),
+    ("P.S.MANGELSDORF VIA CLAUDE", 1.5, 0.2),
+]
+SILK_W = 0.15                       # JLCPCB minimum silkscreen line width
+
+
+def board_silk(board):
+    """Board-level silkscreen, owned by this script (any earlier board-level silk is replaced):
+    the owner's text block, and outline / pin labels for CN1 and CN2, whose footprints carry
+    no silkscreen. CN2 sits on the bottom but is soldered from the top, so it is marked on
+    both sides. Returns the text block's extent (design frame)."""
+    for d in list(board.GetDrawings()):
+        if d.GetLayer() in (pcbnew.F_SilkS, pcbnew.B_SilkS) and d.GetClass() in ("PCB_TEXT", "PCB_SHAPE"):
+            board.Remove(d)
+
+    def text(s, x, y, h, w, layer=pcbnew.F_SilkS):
+        t = pcbnew.PCB_TEXT(board)
+        t.SetText(s); t.SetLayer(layer)
+        t.SetTextSize(VECTOR2I(FromMM(h), FromMM(h))); t.SetTextThickness(FromMM(w))
+        t.SetHorizJustify(pcbnew.GR_TEXT_H_ALIGN_CENTER); t.SetVertJustify(pcbnew.GR_TEXT_V_ALIGN_CENTER)
+        t.SetMirrored(layer == pcbnew.B_SilkS)
+        t.SetPosition(P(x, y)); board.Add(t)
+        return t
+
+    def rect(x0, y0, x1, y1, layer):
+        for a, b in (((x0, y0), (x1, y0)), ((x1, y0), (x1, y1)), ((x1, y1), (x0, y1)), ((x0, y1), (x0, y0))):
+            sh = pcbnew.PCB_SHAPE(board); sh.SetShape(pcbnew.SHAPE_T_SEGMENT)
+            sh.SetLayer(layer); sh.SetWidth(FromMM(SILK_W)); sh.SetStart(P(*a)); sh.SetEnd(P(*b))
+            board.Add(sh)
+
+    # ---- owner's text block, centred in TEXT_AREA
+    x0, y0, x1, y1 = TEXT_AREA
+    pitch = [h * 1.6 for _, h, _ in BOARD_TEXT]
+    y = (y0 + y1) / 2 + sum(pitch) / 2 - pitch[0] / 2
+    items = []
+    for (s, h, w), dy in zip(BOARD_TEXT, pitch):
+        items.append(text(s, (x0 + x1) / 2, y, h, w)); y -= dy
+    boxes = [t.GetBoundingBox() for t in items]
+    xa, ya = to_design(VECTOR2I(min(b.GetLeft() for b in boxes), min(b.GetTop() for b in boxes)))
+    xb, yb = to_design(VECTOR2I(max(b.GetRight() for b in boxes), max(b.GetBottom() for b in boxes)))
+    extent = (min(xa, xb), min(ya, yb), max(xa, xb), max(ya, yb))
+    if not (x0 <= extent[0] and extent[2] <= x1 and y0 <= extent[1] and extent[3] <= y1):
+        raise SystemExit("board text %s does not fit TEXT_AREA %s" % (extent, TEXT_AREA))
+    fps = {fp.GetReference(): fp for fp in board.GetFootprints()}
+
+    # ---- CN1 (top, through-hole): outline, row letters beside column 1, reference
+    xs, ys = list(CN1["cols_x"].values()), list(CN1["rows_y"].values())
+    m = CN1["pad"] / 2 + 0.6
+    rect(min(xs) - m, min(ys) - m, max(xs) + m, max(ys) + m, pcbnew.F_SilkS)
+    for row, ry in CN1["rows_y"].items():
+        text(row, max(xs) + m + 1.0, ry, 1.0, SILK_W)
+    text("1", max(xs), max(ys) + m + 1.0, 1.0, SILK_W)                  # column 1, above row M
+    ref = fps["CN1"].Reference()
+    ref.SetLayer(pcbnew.F_SilkS); ref.SetTextSize(VECTOR2I(FromMM(1.5), FromMM(1.5)))
+    ref.SetTextThickness(FromMM(0.2)); ref.SetPosition(P(-2.5, max(ys) + m + 2.6))
+
+    # ---- CN2 (bottom receptacle, soldered from the top): outline and pin numbers both sides
+    px, py = CN2["pin1"]
+    xl, xr = px - CN2["pitch"] * (CN2["n_per_row"] - 1), px
+    yt, yb2 = py, py - CN2["row"]
+    m = CN2["pad"] / 2 + 0.6
+    for layer in (pcbnew.F_SilkS, pcbnew.B_SilkS):
+        rect(xl - m, yb2 - m, xr + m, yt + m, layer)
+        for s, x, yy in (("1", xr + m + 1.2, yt), ("2", xr + m + 1.2, yb2),
+                          ("39", xl - m - 1.6, yt), ("40", xl - m - 1.6, yb2)):
+            text(s, x, yy, 1.0, SILK_W, layer)
+    text("CN2 (fitted on bottom)", (xl + xr) / 2, yb2 - m - 1.4, 1.2, SILK_W)
+    ref = fps["CN2"].Reference()
+    ref.SetLayer(pcbnew.B_SilkS); ref.SetMirrored(True)
+    ref.SetTextSize(VECTOR2I(FromMM(1.5), FromMM(1.5))); ref.SetTextThickness(FromMM(0.2))
+    ref.SetPosition(P((xl + xr) / 2, yb2 - m - 1.6))
+    return extent
+
+
 # ------------------------------------------------------------------ height check
 # Owner: ~7/8" (22.2 mm) maximum height measured from the BOTTOM of the board, i.e. about
 # 20.2 mm above the component side with the 2.0 mm board. Values are datasheet / package
@@ -359,6 +474,7 @@ HEIGHTS = {
     "D_SMA": 2.44, "D_SMB": 2.62, "SOT-23": 1.2, "TSOT-23-6": 1.1, "SOT-223-3_TabPin2": 1.8,
     "SOIC-8_3.9x4.9mm_P1.27mm": 1.75, "SOIC-14_3.9x8.7mm_P1.27mm": 1.75,
     "SOIC-16_3.9x9.9mm_P1.27mm": 1.75, "SOIC-20W_7.5x12.8mm_P1.27mm": 2.65,
+    "SOIC-16W_7.5x10.3mm_P1.27mm": 2.65,
     "LQFP-64_10x10mm_P0.5mm": 1.6, "TO-252-4": 2.4, "TO-263-2": 4.83,
     "L_Bourns_SRN6045TA": 4.5, "ESP32-WROOM-32": 3.35,           # V6 BOM gives 3.35 mm for the -32E
     "PinHeader_1x05_P2.54mm_Vertical": 8.5, "PinHeader_1x06_P2.54mm_Vertical": 8.5,
@@ -480,6 +596,8 @@ if __name__ == "__main__":
     print("placement failures: %s" % (fails or "none"))
     if fails:
         sys.exit(1)
+    print("references moved off their own silkscreen: %s" % (", ".join(clear_own_silk(board)) or "none"))
+    print("board text block at %s" % (tuple(round(v, 1) for v in board_silk(board)),))
     rows, problems = check_heights(board)
     problems += ["CLEARANCE: " + b for b in check_connector_clearance(board)]
     print("tallest parts (limit %.1f mm above the top surface): %s" % (
