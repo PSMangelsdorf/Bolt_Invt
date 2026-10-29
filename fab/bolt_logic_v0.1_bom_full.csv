@@ -11,7 +11,7 @@ Qty,Designators,Value,Footprint,Chosen spec,MPN,LCSC,Source,Fit by,Note
 5,"C41,C42,C43,C44,C45",10nF,C_0805_2012Metric,10 nF X7R 50 V,CL21B103KBANNNC,C1710,lcsc,smt,same part as V6
 11,"C48,C51,C53,C56,C82,C83,C85,C86,C87,C88,C89",1nF,C_0805_2012Metric,1 nF X7R 50 V,CL21B102KBCNNNC,C46653,lcsc,smt,same part as V6
 4,"C50,C52,C55,C71",4.7nF,C_0805_2012Metric,4.7 nF C0G 50 V (Murata),GRM2165C1H472JA01D,C77063,lcsc,smt,C0G proposed: exciter filter and current-sense filters
-1,C70,3.3nF,C_0805_2012Metric,3.3 nF C0G 50 V (TDK),C2012C0G1H332JT000N,C342575,lcsc,smt,C0G proposed: exciter sine filter
+1,C70,3.3nF,C_0805_2012Metric,3.3 nF C0G 50 V (Murata),GRM2165C1H332JA01D,C77062,lcsc,smt,C0G proposed: exciter sine filter
 1,C72,2.2nF,C_0805_2012Metric,2.2 nF C0G 50 V,0805CG222J500NT,C51795,lcsc,smt,C0G proposed: exciter sine filter
 1,CN1,GM X1 48-way,CN1_GM_48pos_4x12,vehicle connector,GM 48-way header (part not yet identified),,,hand,hand-solder (owner); 1.0 mm placeholder holes
 1,CN2,SSW-120-01-T-D-LL,CN2_2x20_P2.54_Receptacle_Back,"2x20 receptacle, bottom side",SSW-120-01-T-D-LL (Samtec),,,hand,hand-solder (owner)
@@ -26,7 +26,7 @@ Qty,Designators,Value,Footprint,Chosen spec,MPN,LCSC,Source,Fit by,Note
 2,"L2,L30",10uH,L_0805_2012Metric,"10 uH 0805, DCR 0.3 ohm (TDK)",MLZ2012N100LT000,C88182,lcsc,smt,L30 feeds the ESP32 (~0.5 A transmit peaks): no 0805 10 uH part is really rated for that. V6 used a 0603 10 uH (C1035) here. Review
 1,LED1,PWR green,LED_0805_2012Metric,green 0805,KT-0805G,C2297,lcsc,smt,
 1,LED2,STATUS,LED_0805_2012Metric,green 0805,KT-0805G,C2297,lcsc,smt,colour not specified; green proposed
-2,"Q1,Q2",BTS443P,TO-252-4,"PROFET high-side, PG-TO252-5-11",BTS443P (BTS443PAUMA1),,,hand,"not in the LCSC catalogue: hand-solder, or JLC Global Sourcing"
+2,"Q1,Q2",BTS6143D,TO-252-4,"PROFET high-side 10 mohm, PG-TO252-5-11 (Infineon)",BTS6143D,C95232,lcsc,smt,owner: replaces BTS443P (same pinout and IN-to-GND input)
 2,"Q3,Q4",2N7002,SOT-23,60 V N-MOSFET (JSCJ),2N7002,C8545,lcsc,smt,new in v0.1: BTS443P input switch
 36,"R1,R5,R10,R14,R31,R35,R37,R49,R50,R51,R61,R62,R63,R64,R65,R67,R68,R71,R72,R73,R76,R77,R80,R81,R88,R90,R92,R111,R113,R114,R115,R116,R117,R120,R121,R122",10k,R_0805_2012Metric,10 k 1%,0805W8F1002T5E,C17414,lcsc,smt,
 1,R2,6.8k,R_0805_2012Metric,6.8 k 1%,0805W8F6801T5E,C17772,lcsc,smt,
@@ -57,12 +57,12 @@ Qty,Designators,Value,Footprint,Chosen spec,MPN,LCSC,Source,Fit by,Note
 1,U3,STM32F103RBT6,LQFP-64_10x10mm_P0.5mm,MCU,STM32F103RBT6,C8735,lcsc,smt,same part as V6
 1,U4,74HCT573,SOIC-20W_7.5x12.8mm_P1.27mm,octal latch (Nexperia),"74HCT573D,653",C5209384,lcsc,smt,"V6 BOM lists C5608, which LCSC shows as the HC part"
 1,U5,74HC21,SOIC-14_3.9x8.7mm_P1.27mm,dual 4-input AND (Nexperia),"74HC21D,653",C5617,lcsc,smt,
-1,U6,CD74HCT30,SOIC-14_3.9x8.7mm_P1.27mm,"8-input NAND, HCT","CD74HCT30M96 (TI) or 74HCT30D,653 (Nexperia)",,,hand,"no HCT30 at LCSC (only HC, which won't read the 3.3 V OCUR_OK input at 5 V): hand-solder or JLC Global Sourcing"
-4,"U7,U8,U12,U14",MCP6292,SOIC-8_3.9x4.9mm_P1.27mm,dual RRIO op-amp (Microchip),MCP6292-E/SN,C556929,lcsc,smt,
+1,U6,74HCT10,SOIC-14_3.9x8.7mm_P1.27mm,"triple 3-input NAND, HCT (Nexperia)","74HCT10D,653",C547236,lcsc,smt,owner: replaces CD74HCT30 (one gate used)
+4,"U7,U8,U12,U14",MCP6292,SOIC-8_3.9x4.9mm_P1.27mm,dual RRIO op-amp (Microchip),MCP6292-E/SN,C556929,lcsc,smt,low stock at LCSC (38 in October 2026; 4 per board)
 2,"U9,U10",LM2901,SOIC-14_3.9x8.7mm_P1.27mm,quad comparator (TI),LM2901DR,C7932,lcsc,smt,
-1,U11,74HCT4052,SOIC-16_3.9x9.9mm_P1.27mm,"dual 4:1 analog mux, HCT",74HCT4052D,C87281,v6,smt,number from the V6 BOM; confirm when uploading
-1,U13,L272D,SOIC-16_3.9x9.9mm_P1.27mm,dual power op-amp (ST),L272D013TR,C443843,lcsc,smt,pinout still to confirm against ST's drawing (see fab notes)
-3,"U20,U21,U22",BTS133TC,TO-263-2,"HITFET low-side, TO-263",BTS133TC (BTS133TCBUMA1),C2681318,v6,smt,number from the V6 BOM; confirm it resolves to BTS133TC when uploading
+1,U11,74HCT4052,SOIC-16_3.9x9.9mm_P1.27mm,"dual 4:1 analog mux, HCT (TI)",CD74HCT4052M96,C469908,lcsc,smt,
+1,U13,TCA0372DW,SOIC-16W_7.5x10.3mm_P1.27mm,dual 1 A power op-amp (onsemi),TCA0372DWR2G,C362060,lcsc,smt,owner: replaces L272D (not stocked)
+3,"U20,U21,U22",BTS133TC,TO-263-2,"HITFET low-side, TO-263",BTS133TC (BTS133TCBUMA1),C2681318,v6,smt,"owner: keep. Number from the V6 BOM, not found at LCSC: if JLCPCB can't place it, hand-solder (Digi-Key / Farnell / RS)"
 1,U23,SN65HVD234,SOIC-8_3.9x4.9mm_P1.27mm,3.3 V CAN transceiver (TI),SN65HVD234DR,C99818,lcsc,smt,
 1,U30,ESP32-WROOM-32E,ESP32-WROOM-32,"WiFi module, PCB antenna",ESP32-WROOM-32E-N4,C701341,lcsc,smt,
 1,Y1,8MHz,Crystal_SMD_5032-2Pin_5.0x3.2mm,8 MHz 5032 (YXC),X50328MSB2GI,C115962,lcsc,smt,same part as V6

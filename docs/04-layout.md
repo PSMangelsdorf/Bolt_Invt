@@ -189,8 +189,8 @@ Values are unchanged. The datasheet's typical circuit uses 4.7 µH; the board ke
 |----|----|
 | Parts | 243 placed, every pad's net checked against the KiCad netlist; nothing within 10 mm of CN1/CN2 |
 | Connections | CN1, CN2, J1 (SWD), J4 (ESP32 programming); TP1/TP2 are bare test pads on CN2 pins 20/18 |
-| Tracks | 2 325 segments: F.Cu 4.0 m, In2.Cu 5.4 m, B.Cu 1.1 m |
-| Vias | 721 (500 GND fan-out / stitching / buck block), 0.6 / 0.3 mm |
+| Tracks | 2 321 segments: F.Cu 4.0 m, In2.Cu 5.4 m, B.Cu 1.3 m |
+| Vias | 729 (505 GND fan-out / stitching / buck block), 0.6 / 0.3 mm |
 | DRC | **0 clearance, short or keep-out violations; 0 unconnected items; 0 silkscreen overlaps** |
 | DRC warnings left | 2 where the ESP32 outline meets the board edge (module flush with the edge, by design), 199 `lib_footprint_issues` (see below) |
 | Router-closed connections | none needed |
