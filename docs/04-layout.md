@@ -122,7 +122,8 @@ Placement rules (`gen_layout.py`):
   CN2. Tracks and vias may pass through the zone.
 - **Legible references:** each part's placement box includes its silkscreen reference, with
   1.5 mm between boxes. So no reference sits on a pad or on another reference, and every
-  reference stays on the silkscreen.
+  reference stays on the silkscreen. A reference that lands on its own footprint's filled
+  pin-1 mark (SOT-23s) is slid clear afterwards (`clear_own_silk`).
 
 | Group | Region (x, y in mm) | Why there |
 |----|----|----|
@@ -186,10 +187,10 @@ Values are unchanged. The datasheet's typical circuit uses 4.7 µH; the board ke
 
 | | |
 |----|----|
-| Parts | 241 placed, every pad's net checked against the KiCad netlist; nothing within 10 mm of CN1/CN2 |
+| Parts | 243 placed, every pad's net checked against the KiCad netlist; nothing within 10 mm of CN1/CN2 |
 | Connections | CN1, CN2, J1 (SWD), J4 (ESP32 programming); TP1/TP2 are bare test pads on CN2 pins 20/18 |
-| Tracks | 2 480 segments: F.Cu 4.1 m, In2.Cu 5.3 m, B.Cu 1.2 m |
-| Vias | 711 (498 GND fan-out / stitching / buck block), 0.6 / 0.3 mm |
+| Tracks | 2 325 segments: F.Cu 4.0 m, In2.Cu 5.4 m, B.Cu 1.1 m |
+| Vias | 721 (500 GND fan-out / stitching / buck block), 0.6 / 0.3 mm |
 | DRC | **0 clearance, short or keep-out violations; 0 unconnected items; 0 silkscreen overlaps** |
 | DRC warnings left | 2 where the ESP32 outline meets the board edge (module flush with the edge, by design), 199 `lib_footprint_issues` (see below) |
 | Router-closed connections | none needed |
@@ -212,12 +213,26 @@ Values are unchanged. The datasheet's typical circuit uses 4.7 µH; the board ke
 | 4 | **PWM to CN2** | Six lines: check they are short, reference the In1 plane, and don't cross a plane gap. |
 | 5 | **Smart switches (Q1/Q2 BTS443P high-side, U20–U22 BTS133TC low-side)** | Add copper area on the tabs for heat; widen output traces if the load needs it. |
 | 6 | **CHASSIS** | Mounting-hole ring and the R7 tie to GND: confirm the single-point bond location. |
-| 7 | **Mechanical** | Height is now checked (section 7). Any lid or rib keep-outs in the housing are still unknown. |
+| 7 | **Mechanical** | Height is now checked (section 8). Any lid or rib keep-outs in the housing are still unknown. |
 | 8 | **Pre-layout checklist** | `03-schematic-design.md` §8: L272D, BTS443P (TO-252-4 vs -5), BTS133TC, AP63205 values, CN1 hole sizes, CN2 height. |
 | 9 | **+3V3 trunk** | The router could only use one width per net, so +3V3 is 0.25 mm everywhere, and it feeds the ESP32, whose transmit peaks approach 0.5 A. Widen the trunk from U2 to the MCU / ESP32 area by hand, or give it a short In2 pour. |
 | 10 | **Silkscreen** | References are placed and clear of each other. Still to add: board name, revision, CN2 pin 1, and the HV warning. |
 
-## 7. Height limit
+## 7. Prototype fabrication files
+
+`tools/gen_fab.py` writes `fab/` at the repository root from the routed board:
+- Gerbers and drill files (one zip);
+- JLCPCB assembly BOM and placement file;
+- a full BOM with the chosen spec, MPN and source of every LCSC number;
+- `fab/README.md`, which has the order settings, the hand-fit list and the open items.
+
+Part choices live in `tools/jlc_parts.py`. The run fails if a BOM line has no entry.
+The checks done on the files are:
+- all 11 Gerber layers and both drill files load in an independent reader (gerbonara);
+- the placement points land on the parts in the rendered Gerbers;
+- the board passes DRC at 0.20 mm.
+
+## 8. Height limit
 
 Owner: about 7/8" (22.2 mm) maximum height, measured from the bottom of the board. That
 leaves about 20.2 mm above the component side of the 2.0 mm board. `gen_layout.py` checks
