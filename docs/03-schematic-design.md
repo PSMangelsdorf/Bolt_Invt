@@ -19,7 +19,7 @@ Legend: **REUSE** = V6 circuit unchanged · **ADAPT** = V6 circuit, new values/h
    HC5FW700 sensors are analog, so the filter becomes a buffer. Keeping the same
    divider gives **k = 0.635 → `il1gain`/`il2gain` ≈ 2.25 digits/A** (supersedes 2.37).
 3. **The 74HCT573 is not a fault gate** — its OE is grounded. Hardware shutdown is the
-   CD74HC30 NAND → **PB12 = TIM1 break input** (section 4.4).
+   CD74HC30 NAND → **PB12 = TIM1 break input** (section 4.4). This board uses a 74HCT10 for it.
 
 ## 2. Block summary
 
@@ -99,21 +99,25 @@ FT = 5 V-tolerant. Non-FT pins never see 5 V signals directly.
 
 ```
 CN1 M1/M4 (Batt+) ─ TVS1 SMBJ26CA
-   └─ Q1 BTS443P (IN ← Q3 2N7002 ← IGN via 10k/6.8k) ─ VBAT_SW ─ D1 SS54 ─ VCC_12V
+   └─ Q1 BTS6143D (IN ← Q3 2N7002 ← IGN via 10k/6.8k) ─ VBAT_SW ─ D1 SS54 ─ VCC_12V
          VCC_12V ─┬─ U1 AP63205WU buck (fixed 5.0 V) ─ +5V ─┬─ U2 LD1117-3.3 ─ +3V3
                   │                                          └─ FB1 ferrite ─ +5V_A (CN2 28/29)
-                  └─ Q2 BTS443P (IN ← Q4 2N7002 ← PA15 GATE_PWR_EN, 10k pull-down) ─ +12V_GATE (CN2 31/33/35/37)
+                  └─ Q2 BTS6143D (IN ← Q4 2N7002 ← PA15 GATE_PWR_EN, 10k pull-down) ─ +12V_GATE (CN2 31/33/35/37)
 CN1 L3 (IGN) ─ 124 kΩ ─ CN2 36/38   (replicates the OEM ~125 kΩ ignition sense)
 ```
 
-- **Q1 / Q2: Infineon BTS443P** smart high-side switches (16 mΩ, 7.6 A, 36 V, DPAK).
+- **Q1 / Q2: Infineon BTS6143D** smart high-side switches (10 mΩ, 8 A nominal, 5.5–38 V,
+  PG-TO252-5-11). The owner chose it over the BTS443P because JLCPCB stocks it. It has the
+  same pinout (OUT 1/5, IN 2, Vbb 3 = tab, IS 4) and the same ground-referenced input, so the
+  BTS443P symbol and footprint are kept.
   Q1 is enabled by ignition, so the board draws nothing with ignition off. Q2 is
   enabled by firmware after init; with it off the isolated gate supplies collapse and
   the 1ED020I12 UVLO holds every IGBT off. Both IS (current-sense) pins have 1 kΩ to
   GND. The OEM board has two DPAK parts in the same corner.
-- **BTS443P input (fixed in v0.1, owner-approved).** The BTS443P has no GND pin. It
-  switches on when IN is pulled to ground: the input switch has to sink 0.7–1.2 mA, and
-  under 50 µA keeps it off (Infineon datasheet, pin table and input specs). The first
+- **Input drive (fixed in v0.1, owner-approved).** Neither the BTS443P nor the BTS6143D has a
+  GND pin. Each switches on when IN is pulled to ground. For the BTS6143D the input switch
+  has to sink up to 2.2 mA, and under 30 µA keeps it off (Infineon datasheets, pin table and
+  input specs). The first
   schematic drove IN like a logic input. Q1's IN went to GND through 6.8 k, which left it
   always on, and Q2's IN went to PA15 through 1 k, which the MCU could never switch off.
   Each now has a 2N7002 (Q3, Q4) from IN to GND:
@@ -158,16 +162,22 @@ The gate board's own HC365 has its OEs grounded and there's no interlock, so dea
 is firmware's job (TIM1 dead-time generator).
 
 ### 4.4 Fault / break logic (ADAPT)
-8-input NAND **CD74HCT30** (HCT so 3.3 V-level inputs are valid) at 5 V; output →
-**PWM_INHIBIT → PB12 (TIM1_BKIN)**. Each status input gets the V6's 560 Ω + 10 nF
-filter, plus a **100 kΩ pull-down** so a missing or unplugged gate board reads as a fault.
+3-input NAND, one gate of a **74HCT10** (U6) at 5 V. HCT is needed so the 3.3 V
+OCUR_OK level reads as high. Its output → **PWM_INHIBIT → PB12 (TIM1_BKIN)**. Each status
+input gets the V6's 560 Ω + 10 nF filter, plus a **100 kΩ pull-down** so a missing or
+unplugged gate board reads as a fault.
 
 | NAND input | Signal | Source | Idle (OK) |
 |----|----|----|----|
-| A | GATE_FLT | CN2 22 (all FLT + RDY wire-OR, OD, 20 k from gate board) | high |
-| B–E | HEALTH1–4 | CN2 7, 8, 9, 10 (AHC08 push-pull) | high |
-| F | OCUR_OK | overcurrent comparators (4.5) | high |
-| G, H | — | tied to +5 V | high |
+| 1 | GATE_OK_5V | U5 74HC21: AND of HEALTH1–4 (CN2 7, 8, 9, 10, AHC08 push-pull) | high |
+| 2 | GATE_FLT | CN2 22 (all FLT + RDY wire-OR, OD, 20 k from gate board) | high |
+| 13 | OCUR_OK | overcurrent comparators (4.5) | high |
+
+The first schematic used an 8-input CD74HCT30 that took HEALTH1–4 directly. JLCPCB
+doesn't stock it, so the owner approved this equivalent. NAND(AND(HEALTH1–4), GATE_FLT,
+OCUR_OK) is the same function, and a HEALTH fault now passes through U5 first, which
+adds about 20 ns against the 5.6 µs input filter. U6's other two gates have their inputs
+grounded.
 
 Any input low → PWM_INHIBIT high → TIM1 break disables all six outputs in hardware.
 No pull-ups on CN2 22 or 7–10 on our side; the gate board defines those levels.
@@ -178,7 +188,7 @@ GATE_OK → 10 k/20 k divider → PA0.
 2× LM2901 quad comparators, open-collector outputs wired together, pull-up **10 k to
 +3V3** (the V6 pulls to 5 V into non-FT PA1). Thresholds OCURLIM_POS/NEG from PB8/PB7
 via 10 k + 1 µF (REUSE). Six comparators: IL1, IL2, and **IW** (new third phase), each
-against the + and − thresholds. Node → PA1 (OCUR_OK) and NAND input F.
+against the + and − thresholds. Node → PA1 (OCUR_OK) and NAND input 13.
 
 ### 4.6 Current-sense front end (ADAPT)
 Per phase (U, V, W):
@@ -213,10 +223,20 @@ which the firmware's SPI mode can read — same chip family as the OEM board.)
 
 Exciter (f = PWM frequency / 2, e.g. 4.4 kHz at 8.8 kHz PWM):
 `PD2 → 0 Ω (RES option) → RC pole (10 k/3.3 nF) → unity-gain Sallen-Key (MCP6292,
-fc ≈ 5 kHz, Q ≈ 0.73) → 1 µF AC-couple → L272D bridge from VCC_12V (A: non-inverting
+fc ≈ 5 kHz, Q ≈ 0.73) → 1 µF AC-couple → TCA0372 bridge from VCC_12V (A: non-inverting
 gain 3 about VCC_12V/2; B: unity inverter about the same bias) → 10 µF DC-block +
 10 Ω → CN1 B2 (EXC+) / 10 Ω → B1 (EXC−)`
-- L272: ST dual 1 A power op-amp, 4–28 V, 1 V/µs (a ~20 Vpp, 5 kHz exciter needs ~0.3 V/µs).
+- **TCA0372DW** (onsemi): dual 1 A power op-amp. Single or split supply up to 40 V,
+  1.4 V/µs typical, 1.4 MHz GBW typical, and the input range includes ground (a ~20 Vpp,
+  5 kHz exciter needs ~0.3 V/µs). The owner chose it over the first choice, ST's L272D,
+  which JLCPCB doesn't stock. Pinout (SOIC-16W):
+  - VCC 1; OUTB 2; −INB 7; +INB 8; +INA 9; −INA 10; OUTA 16;
+  - GND 4/5/12/13 (also the heat path);
+  - NC 3/6/11/14/15.
+
+  This comes from the datasheet's DW pin drawing (label order) and a component-library pin
+  table, which agree. The resistors are unchanged.
+- Output swing is about 1.3 V from each rail at 1 A, and less at the exciter's ~100 mA.
 - Bridge drive gives up to ~20 Vpp across the primary from 12 V; gain is
   resistor-set so the amplitude can be matched to the resolver.
 - Firmware assumes a ~305° total phase delay (filter + amp + resolver), tunable via
@@ -362,16 +382,16 @@ with `kicad-cli` and checks every pin against the table (currently: exact match,
 duplicate references). PDF: `docs/bolt_logic_schematic.pdf`.
 
 Library symbols are used wherever KiCad has an exact or pin-identical part (value
-field carries the real part): 74LS573 → 74HCT573, 74LS30 → CD74HCT30, 74LS21 → 74HC21,
-CD4052B → 74HCT4052, MCP6002 → MCP6292. Custom symbols (`Bolt.kicad_sym`): CN1_GM48,
-BTS133TC.
+field carries the real part): 74LS573 → 74HCT573, 74LS10 → 74HCT10, 74LS21 → 74HC21,
+CD4052B → 74HCT4052, MCP6002 → MCP6292, BTS443P → BTS6143D (same pinout). Custom symbols
+(`Bolt.kicad_sym`): CN1_GM48, BTS133TC, TCA0372.
 
 ### Pre-layout verification checklist (datasheet vs. symbol/footprint)
 
 | Part | Check |
 |----|----|
-| **L272D** | Library symbol: V+ = 4, V− = 6, A = 3/13/14, B = 5/11/12. Confirm against ST's pin-connection figure (not readable as text). |
-| **BTS443P** | **Checked (Infineon datasheet):** OUT 1/5, IN 2, Vbb 3 = tab, IS 4; package PG-TO252-5-11. The KiCad TO-252-4 footprint has pads 1, 2, 4, 5 plus the tab as pin 3, which matches. IN is pulled to GND to switch on, and the drive is fixed with Q3/Q4 (§4.1). Still to confirm: the lead pitch of the footprint (1.14 mm) against Infineon's package drawing. |
+| **TCA0372DW** (replaces L272D) | Pinout from two agreeing sources (§4.8); glance at onsemi's DW pin drawing before ordering. |
+| **BTS443P → BTS6143D** | **Checked (Infineon datasheets):** both parts share this pinout. OUT 1/5, IN 2, Vbb 3 = tab, IS 4; package PG-TO252-5-11. The KiCad TO-252-4 footprint has pads 1, 2, 4, 5 plus the tab as pin 3, which matches. IN is pulled to GND to switch on, and the drive is fixed with Q3/Q4 (§4.1). Still to confirm: the lead pitch of the footprint (1.14 mm) against Infineon's package drawing. |
 | **BTS133TC** | TO-263 pad mapping (tab = D = pin 2) and that 3.3 V drive fully enhances it (V6 does this). |
 | **AP63205WU** | EN tied to VIN, input/output capacitor values. Inductor: 6.8 µH (as the AP63205 EVB) kept, owner-approved. |
 | **CN1** | Hole diameters (1.0 mm placeholder; rows M/L may use larger terminals). |
@@ -385,5 +405,5 @@ BTS133TC.
 | 2 | Bolt motor temp sensor type | open — 2.2 k default pull-up, own footprint |
 | 3 | CN2 pin 18 | **assumed DC-bus**; transfer function needed before HV (bench test) |
 | 4 | Resolver approach | **resolved** — software resolver |
-| 5 | Parts: Q1/Q2 = BTS443P, exciter = L272D, buck = AP63205WU, polyfuses chosen | **resolved** (verify per checklist) |
+| 5 | Parts: Q1/Q2 = BTS6143D, exciter = TCA0372, buck = AP63205WU, polyfuses chosen | **resolved** (verify per checklist) |
 | 6 | CN2 insulator height vs. OEM | open |

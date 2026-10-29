@@ -203,15 +203,18 @@ Fit by hand after delivery (or order through JLCPCB Global Sourcing, where noted
 
 ## Open items before trusting this board
 
-1. **L272D pinout (U13, resolver exciter).** The KiCad symbol used is V+ = 4, V- = 6,
-   amplifier A = 3 / 13 / 14, amplifier B = 5 / 11 / 12 (output / inputs). ST's SO-16 pin
-   drawing is a figure, not text, and nobody has checked the symbol against it yet. Check it
-   before fitting U13.
-2. **L30, the ESP32 supply inductor.** It is a 10 uH 0805, as on V6 (which used a 0603).
+1. **TCA0372 pinout (U13, resolver exciter).** The symbol uses VCC = 1, OUTB = 2,
+   GND = 4 / 5 / 12 / 13, -INB = 7, +INB = 8, +INA = 9, -INA = 10, OUTA = 16, NC = 3 / 6 / 11
+   / 14 / 15. Two sources agree on this: the label order of the datasheet's DW pin drawing,
+   and a component-library pin table. The drawing itself is a figure, so glance at it in
+   onsemi's datasheet before ordering.
+2. **BTS133TC (U20-U22).** C2681318 comes from the V6 BOM and isn't found at LCSC. If
+   JLCPCB can't place it, fit it by hand.
+3. **L30, the ESP32 supply inductor.** It is a 10 uH 0805, as on V6 (which used a 0603).
    No 0805 10 uH part is really rated for the ESP32's ~0.5 A transmit peaks. Watch for WiFi
    brown-outs on the bench.
-3. **CN1 holes** are 1.0 mm placeholders; the GM header part isn't identified yet.
-4. **CN2 pin 18** is assumed to be the DC-bus voltage (bench test before high voltage).
+4. **CN1 holes** are 1.0 mm placeholders; the GM header part isn't identified yet.
+5. **CN2 pin 18** is assumed to be the DC-bus voltage (bench test before high voltage).
 """
 
 if __name__ == "__main__":

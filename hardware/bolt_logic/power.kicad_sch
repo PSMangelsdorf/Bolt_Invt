@@ -2936,7 +2936,7 @@
       (effects
         (font (size 1.27 1.27))
         (justify left)))
-    (property "Value" "BTS443P"
+    (property "Value" "BTS6143D"
       (at 55.88 53.2 0)
       (effects
         (font (size 1.27 1.27))
@@ -3770,7 +3770,7 @@
       (effects
         (font (size 1.27 1.27))
         (justify left)))
-    (property "Value" "BTS443P"
+    (property "Value" "BTS6143D"
       (at 35.56 93.84 0)
       (effects
         (font (size 1.27 1.27))

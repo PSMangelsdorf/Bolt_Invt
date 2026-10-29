@@ -211,10 +211,10 @@ Values are unchanged. The datasheet's typical circuit uses 4.7 µH; the board ke
 | 2 | **Resolver exciter (U13 to CN1)** | EXC_* carries ~100 mA at 10 kHz. Keep it away from SIN/COS and run the pairs side by side. |
 | 3 | **Analog inputs (IL1, IL2, UDC, SIN/COS, temps)** | Check that no PWM or exciter track runs parallel on an adjacent layer. Add a GND guard where it does. |
 | 4 | **PWM to CN2** | Six lines: check they are short, reference the In1 plane, and don't cross a plane gap. |
-| 5 | **Smart switches (Q1/Q2 BTS443P high-side, U20–U22 BTS133TC low-side)** | Add copper area on the tabs for heat; widen output traces if the load needs it. |
+| 5 | **Smart switches (Q1/Q2 BTS6143D high-side, U20–U22 BTS133TC low-side)** | Add copper area on the tabs for heat; widen output traces if the load needs it. |
 | 6 | **CHASSIS** | Mounting-hole ring and the R7 tie to GND: confirm the single-point bond location. |
 | 7 | **Mechanical** | Height is now checked (section 8). Any lid or rib keep-outs in the housing are still unknown. |
-| 8 | **Pre-layout checklist** | `03-schematic-design.md` §8: L272D, BTS443P (TO-252-4 vs -5), BTS133TC, AP63205 values, CN1 hole sizes, CN2 height. |
+| 8 | **Pre-layout checklist** | `03-schematic-design.md` §8: TCA0372, BTS6143D (TO-252-4 vs -5), BTS133TC, AP63205 values, CN1 hole sizes, CN2 height. |
 | 9 | **+3V3 trunk** | The router could only use one width per net, so +3V3 is 0.25 mm everywhere, and it feeds the ESP32, whose transmit peaks approach 0.5 A. Widen the trunk from U2 to the MCU / ESP32 area by hand, or give it a short In2 pour. |
 | 10 | **Silkscreen** | Done except the HV warning: every part's reference is on the silkscreen. The owner's text block (board name, revision, openinverter.org, copyright and authors) is in the empty area right of the MCU. CN1 has an outline, row letters A–M and pin 1. CN2 has an outline and pins 1/2/39/40 on both sides, since it is soldered from the top (`board_silk` in `gen_layout.py`). |
 
