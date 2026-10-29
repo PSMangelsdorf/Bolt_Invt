@@ -583,7 +583,7 @@ def complete(board, protected=None):
                     g = LineString([(mm(t.GetStart().x), mm(t.GetStart().y)),
                                     (mm(t.GetEnd().x), mm(t.GetEnd().y))]).buffer(mm(t.GetWidth()) / 2)
                     fo.setdefault(t.GetLayer(), []).append(g)
-                    if t.GetNetname() == "GND" or t.m_Uuid.AsString() in protected:
+                    if t.GetNetname() == "GND" or t.IsLocked() or t.m_Uuid.AsString() in protected:
                         hard.setdefault(t.GetLayer(), []).append(g)
                     else:
                         soft_l.setdefault(t.GetLayer(), []).append(g)
@@ -678,7 +678,7 @@ def complete(board, protected=None):
                     dead = []
                     for t in board.GetTracks():
                         if t.GetClass() != "PCB_TRACK" or t.GetNetname() in (net, "GND") \
-                                or t.m_Uuid.AsString() in protected:
+                                or t.IsLocked() or t.m_Uuid.AsString() in protected:
                             continue
                         tg = LineString([(mm(t.GetStart().x), mm(t.GetStart().y)),
                                          (mm(t.GetEnd().x), mm(t.GetEnd().y))]).buffer(mm(t.GetWidth()) / 2)
@@ -851,6 +851,23 @@ def block_copper(board):
         v.SetWidth(FromMM(VIA_D)); v.SetDrill(FromMM(VIA_DRILL)); v.SetNet(board.FindNet(net))
         v.SetLocked(True); board.Add(v)
     return n, len(buck_block.VIAS)
+
+
+def is_block_copper(board, t):
+    """True for a track/via that is part of the hand-designed buck block (possibly split at a
+    junction by the router): same net, same layer, and lying on one of the block's paths."""
+    from shapely.geometry import LineString, Point
+    mm = pcbnew.ToMM
+    u1 = board.FindFootprintByReference("U1")
+    ux, uy = mm(u1.GetPosition().x), mm(u1.GetPosition().y)
+    net = t.GetNetname()
+    if t.GetClass() == "PCB_VIA":
+        x, y = mm(t.GetPosition().x) - ux, mm(t.GetPosition().y) - uy
+        return any(n == net and math.dist((x, y), (vx, vy)) < 0.01 for n, vx, vy in buck_block.VIAS)
+    g = LineString([(mm(t.GetStart().x) - ux, mm(t.GetStart().y) - uy), (mm(t.GetEnd().x) - ux, mm(t.GetEnd().y) - uy)])
+    lay = board.GetLayerName(t.GetLayer())
+    return any(n == net and l == lay and abs(mm(t.GetWidth()) - w) < 1e-3 and g.within(LineString(pts).buffer(0.02))
+               for n, l, w, pts in buck_block.TRACKS)
 
 
 def prestub(board):
@@ -1067,8 +1084,8 @@ def import_and_finish(dsn, ses, base):
     board = pcbnew.LoadBoard(base)
     nt, nv = import_ses(board, ses, dsn)
     print("imported %d track segments, %d vias; removed %d dangling stubs" % (nt, nv, remove_dangling(board)))
-    for t in board.GetTracks():
-        t.SetLocked(False)                         # locks were only for the router
+    for t in board.GetTracks():                    # router locks off; the buck block stays locked
+        t.SetLocked(is_block_copper(board, t))
     print("closed %d open connections directly" % complete_all(board))
     print("removed %d dangling stubs after completion" % remove_dangling(board))
     pv, gv = stitch(board)

@@ -159,7 +159,12 @@ The layout follows the AP63205 datasheet's layout guidance and the AP63205 EVB:
 | GND | four vias in the input/output cap grounds to the In1 plane, plus the F.Cu pour | fan-out vias |
 | FB | U1 pin 1 senses +5V. It drops through a via next to the pin and runs on B.Cu to the output caps, with the In1 GND plane between it and the SW node | routed |
 
-The block's silkscreen references sit around its outside, level with their parts, since
+![5 V buck block](buck_block.png)
+
+*`docs/buck_block.png`, made by `tools/render_block.py`: F.Cu red, B.Cu blue, pads gold.*
+
+The block's copper stays locked in the committed board, so a hand edit elsewhere in KiCad
+won't drag it, and the completion step's rip-up never touches it. The block's silkscreen references sit around its outside, level with their parts, since
 there's no room for a label beside each part. The GND fan-out step leaves the block's GND
 pads alone, because it has its own vias.
 
@@ -172,8 +177,8 @@ Values are unchanged. The datasheet's typical circuit uses 4.7 µH; this board k
 |----|----|
 | Parts | 241 placed, every pad's net checked against the KiCad netlist; nothing within 10 mm of CN1/CN2 |
 | Connections | CN1, CN2, J1 (SWD), J4 (ESP32 programming); TP1/TP2 are bare test pads on CN2 pins 20/18 |
-| Tracks | 2 416 segments: F.Cu 4.0 m, In2.Cu 5.2 m, B.Cu 1.5 m |
-| Vias | 692 (476 GND fan-out / stitching), 0.6 / 0.3 mm |
+| Tracks | 2 480 segments: F.Cu 4.1 m, In2.Cu 5.3 m, B.Cu 1.2 m |
+| Vias | 711 (498 GND fan-out / stitching / buck block), 0.6 / 0.3 mm |
 | DRC | **0 clearance, short or keep-out violations; 0 unconnected items; 0 silkscreen overlaps** |
 | DRC warnings left | 2 where the ESP32 outline meets the board edge (module flush with the edge, by design), 199 `lib_footprint_issues` (see below) |
 | Router-closed connections | none needed |
