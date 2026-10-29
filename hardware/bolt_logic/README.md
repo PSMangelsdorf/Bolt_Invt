@@ -38,6 +38,8 @@ python3 tools/gen_route.py    # plane, pre-route + GND fan-out, FreeRouting x2, 
 - `tools/sch_design.py`: the schematic design table (every part, every pin → net).
 - `tools/gen_layout.py`: placement regions (`GROUPS`), anchors, decoupling pairs (`NEAR`), the 10 mm CN1/CN2 clearance and the height check.
 - `tools/gen_route.py`: net classes, routing flow, GND stitching.
+- `tools/gen_cn1_compare.py`: writes `../../docs/cn1_oem_vs_new.pdf`, the CN1 OEM-vs-new pin table.
+  Re-run it after changing CN1 assignments in `sch_design.py`.
 - `Bolt.pretty/`, `Bolt.kicad_sym`: project footprint and symbol libraries.
 
 Coordinate frame and measurement provenance: `../../docs/02-mechanical.md`.

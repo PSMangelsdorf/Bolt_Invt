@@ -313,6 +313,9 @@ transmission-range-switch positions.
 | G3/G4, H3/H4, J3/J4 | HS-GMLAN 3 and 2 | **reserved — NC** |
 | L1, L4, M2 | IMS supplies, accessory wake | **reserved — NC** |
 
+Printable pin-by-pin comparison (OEM use vs. new use): `cn1_oem_vs_new.pdf`, generated from the
+schematic design table by `hardware/bolt_logic/tools/gen_cn1_compare.py`.
+
 If a future revision also needs the stock range switch, the five drive inputs would need
 other CN1 positions; there is no other connector on this board.
 
