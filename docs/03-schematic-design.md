@@ -358,7 +358,7 @@ BTS133TC.
 | **L272D** | Library symbol: V+ = 4, V− = 6, A = 3/13/14, B = 5/11/12. Confirm against ST's pin-connection figure (not readable as text). |
 | **BTS443P** | Pinout (OUT 1/5, IN 2, Vbb 3 = tab, IS 4), IN thresholds with 3.3 V drive (Q2) and the 10 k/6.8 k divider from IGN (Q1), footprint: library default TO-252-4 vs. the part's TO-252-5. |
 | **BTS133TC** | TO-263 pad mapping (tab = D = pin 2) and that 3.3 V drive fully enhances it (V6 does this). |
-| **AP63205WU** | Inductor value for 5 V out, EN tied to VIN, input/output capacitor values. |
+| **AP63205WU** | EN tied to VIN, input/output capacitor values. Inductor: 6.8 µH (as the AP63205 EVB) kept, owner-approved. |
 | **CN1** | Hole diameters (1.0 mm placeholder; rows M/L may use larger terminals). |
 | **CN2** | Samtec SSW insulator height vs. the OEM part. |
 

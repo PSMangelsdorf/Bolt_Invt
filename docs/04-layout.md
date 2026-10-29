@@ -20,9 +20,20 @@ Images: `layout_placement.png` (placement plus ratsnest), `layout_routed.png` (r
   which every standard 4-layer fab process can build.
 - Vias: 0.6 mm pad, 0.3 mm drill.
 - Copper-to-edge clearance: 0.4 mm.
-- Copper weight: not fixed yet. The AP63205 datasheet suggests 2 oz copper to help the
-  regulator shed heat. 1 oz is the usual cheaper default. Which to order is a fab choice to
-  settle before ordering.
+- **Copper weight (owner): 2 oz finished on the outer layers** (F.Cu, B.Cu), as the AP63205
+  datasheet suggests for heat; inner layers 1 oz. This is in the board's stackup
+  (`STACKUP` in `tools/gen_mech.py`); the dielectric thicknesses there are nominal, and the
+  fab's own 2.0 mm stackup governs. Order the board with 2 oz outer copper.
+- **2 oz fab limits.** Heavy copper raises the fab's minimum track and gap, and the
+  limits differ between fabs. The board passes DRC with every copper gap at 0.2 mm or more,
+  and its narrowest track is 0.2 mm. Component through-holes have at least 0.34 mm annular
+  ring.
+  - JLCPCB (4-layer, 2 oz outer): 0.15 / 0.15 mm track / gap, 0.254 mm PTH annular ring,
+    0.20 mm pad spacing. The board meets all of these.
+  - A fab that needs 10 / 10 mil (0.254 mm) at 2 oz, such as Seeed's online quote, would
+    not accept it: about 500 gaps and every 0.2 mm track are under that.
+  - The only rings under 0.254 mm are the ESP32 module's 0.6 / 0.3 mm thermal vias in its
+    GND pad, which fall under the via rule (pad ≥ hole + 0.1 mm).
 
 Net classes are in `tools/gen_route.py`, `NETCLASSES`:
 
@@ -168,8 +179,8 @@ won't drag it, and the completion step's rip-up never touches it. The block's si
 there's no room for a label beside each part. The GND fan-out step leaves the block's GND
 pads alone, because it has its own vias.
 
-Values are unchanged. The datasheet's typical circuit uses 4.7 µH; this board keeps
-6.8 µH, which is what the AP63205 EVB uses.
+Values are unchanged. The datasheet's typical circuit uses 4.7 µH; the board keeps
+6.8 µH (owner-approved), which is what the AP63205 EVB uses.
 
 ## 4. Results (committed run)
 
@@ -195,7 +206,7 @@ Values are unchanged. The datasheet's typical circuit uses 4.7 µH; this board k
 
 | # | Area | What to do |
 |----|----|----|
-| 1 | **5 V buck (U1, L1, C1/C2/C5, C6)** | **Done:** fixed block, §3.1. Left to check: whether to order 2 oz outer copper, which the datasheet suggests for heat (§1). |
+| 1 | **5 V buck (U1, L1, C1/C2/C5, C6)** | **Done:** fixed block, §3.1. 6.8 µH kept; 2 oz outer copper chosen (§1). |
 | 2 | **Resolver exciter (U13 to CN1)** | EXC_* carries ~100 mA at 10 kHz. Keep it away from SIN/COS and run the pairs side by side. |
 | 3 | **Analog inputs (IL1, IL2, UDC, SIN/COS, temps)** | Check that no PWM or exciter track runs parallel on an adjacent layer. Add a GND guard where it does. |
 | 4 | **PWM to CN2** | Six lines: check they are short, reference the In1 plane, and don't cross a plane gap. |
