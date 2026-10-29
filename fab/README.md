@@ -34,9 +34,12 @@ board; see `docs/04-layout.md` §1.
 ## Assembly
 
 - Assemble the **top side** only, from the BOM and CPL above.
-- Rotations are KiCad's. JLCPCB's preview sometimes shows a part rotated by 90° or 180°
-  against its library model (SOT-23, SOIC and LQFP most often). Check every IC's pin-1
-  marker in the placement preview before confirming, or ask their DFM review to.
+- Positions and rotations are KiCad's footprint origins and orientations, in the same
+  frame as the Gerbers. JLCPCB's preview sometimes shows a part rotated by 90° or 180°
+  against its library model (SOT-23, SOIC and LQFP most often), or offset where the
+  footprint origin isn't the body centre (TO-252, TO-263, the ESP32 module). Check every
+  IC's pin-1 marker and those bodies in the placement preview before confirming, or ask
+  their DFM review to.
 - Check stock for each line when you upload; JLCPCB shows it, and these numbers were
   checked in October 2026.
 

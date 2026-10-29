@@ -216,7 +216,7 @@ Values are unchanged. The datasheet's typical circuit uses 4.7 µH; the board ke
 | 7 | **Mechanical** | Height is now checked (section 8). Any lid or rib keep-outs in the housing are still unknown. |
 | 8 | **Pre-layout checklist** | `03-schematic-design.md` §8: L272D, BTS443P (TO-252-4 vs -5), BTS133TC, AP63205 values, CN1 hole sizes, CN2 height. |
 | 9 | **+3V3 trunk** | The router could only use one width per net, so +3V3 is 0.25 mm everywhere, and it feeds the ESP32, whose transmit peaks approach 0.5 A. Widen the trunk from U2 to the MCU / ESP32 area by hand, or give it a short In2 pour. |
-| 10 | **Silkscreen** | References are placed and clear of each other. Still to add: board name, revision, CN2 pin 1, and the HV warning. |
+| 10 | **Silkscreen** | Done except the HV warning: every part's reference is on the silkscreen. The owner's text block (board name, revision, openinverter.org, copyright and authors) is in the empty area right of the MCU. CN1 has an outline, row letters A–M and pin 1. CN2 has an outline and pins 1/2/39/40 on both sides, since it is soldered from the top (`board_silk` in `gen_layout.py`). |
 
 ## 7. Prototype fabrication files
 
