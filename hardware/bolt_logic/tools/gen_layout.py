@@ -23,6 +23,7 @@ PROJ = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import kisym  # noqa: E402
 from gen_mech import P, to_design, SHEET_ORIGIN  # noqa: E402
+import buck_block  # noqa: E402
 
 PCB = os.path.join(PROJ, "bolt_logic.kicad_pcb")
 SCH = os.path.join(PROJ, "bolt_logic.kicad_sch")
@@ -158,9 +159,8 @@ NEAR = {"C40": ("U4", "20"), "C46": ("U5", "14"), "C47": ("U6", "14"), "C54": ("
         "C60": ("U9", "3"), "C61": ("U10", "3"), "C62": ("U11", "16"), "C75": ("U12", "8"), "C79": ("U13", "4"),
         "C80": ("U13", "4"), "C84": ("U14", "8"), "C109": ("U23", "3"), "C20": ("U3", "19"), "C21": ("U3", "32"),
         "C22": ("U3", "48"), "C23": ("U3", "64"), "C24": ("U3", "1"), "C25": ("U3", "13"), "C26": ("U3", "13"),
-        "C27": ("U3", "7"), "L30": ("U30", "2"), "C120": ("U30", "2"), "C121": ("L30", "1"), "C5": ("U1", "3"), "C1": ("U1", "3"),
-        "C2": ("U1", "3"), "C9": ("U1", "1"), "C7": ("L1", "2"), "C8": ("L1", "2"), "C10": ("U2", "3"),
-        "C11": ("U2", "2"), "C6": ("U1", "5"), "C12": ("U2", "2"), "C13": ("FB1", "2"), "C14": ("FB1", "2"), "C15": ("Q2", "1"),
+        "C27": ("U3", "7"), "L30": ("U30", "2"), "C120": ("U30", "2"), "C121": ("L30", "1"), "C10": ("U2", "3"),
+        "C11": ("U2", "2"), "C12": ("U2", "2"), "C13": ("FB1", "2"), "C14": ("FB1", "2"), "C15": ("Q2", "1"),
         "C16": ("Q2", "1"), "C3": ("D1", "1"), "C4": ("D1", "1"), "C28": ("Y1", "1"), "C29": ("Y1", "2"),
         "C30": ("Y2", "1"), "C31": ("Y2", "2")}
 STEP = 0.75
@@ -237,6 +237,32 @@ def overlap(a, b, gap=None):
     return not (a[2] + gap <= b[0] or b[2] + gap <= a[0] or a[3] + gap <= b[1] or b[3] + gap <= a[1])
 
 
+def place_block(fps):
+    """Fixed 5 V buck block (tools/buck_block.py): U1 at its anchor, every other part at its
+    offset, rotated so pad 1 faces the requested side. Returns the block's placement box."""
+    u1 = fps["U1"]
+    u1.SetOrientationDegrees(buck_block.U1_ROT); u1.SetPosition(P(*buck_block.U1_AT))
+    ux, uy = pcbnew.ToMM(u1.GetPosition().x), pcbnew.ToMM(u1.GetPosition().y)
+    want = {"left": (-1, 0), "right": (1, 0), "up": (0, -1), "down": (0, 1)}
+    for ref, (dx, dy, side) in buck_block.PARTS.items():
+        fp = fps[ref]
+        pos = VECTOR2I(FromMM(ux + dx), FromMM(uy + dy))
+        for rot in (0, 90, 180, 270):
+            fp.SetOrientationDegrees(rot); fp.SetPosition(pos)
+            p1 = [p for p in fp.Pads() if p.GetNumber() == "1"][0].GetPosition()
+            vx, vy = pcbnew.ToMM(p1.x - pos.x), pcbnew.ToMM(p1.y - pos.y)
+            wx, wy = want[side]
+            if vx * wx + vy * wy > 0.5 * math.hypot(vx, vy):
+                break
+        else:
+            raise SystemExit("buck block: no rotation puts %s pad 1 %s" % (ref, side))
+    for ref, (lx, ly) in buck_block.LABELS.items():
+        t = fps[ref].Reference()
+        t.SetPosition(VECTOR2I(FromMM(ux + lx), FromMM(uy + ly))); t.SetTextAngleDegrees(0)
+    boxes = [pbox(fps[r]) for r in buck_block.REFS]
+    return (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
+
+
 def place_all(board):
     fps = {fp.GetReference(): fp for fp in board.GetFootprints()}
     placed_boxes = keepouts(board)
@@ -260,6 +286,9 @@ def place_all(board):
         return (x0, y0, x1, y1), pads
 
     failures = []
+    placed_boxes.append(place_block(fps))
+    for r in buck_block.REFS:
+        record(fps[r])
     for ref, (x, y, rot) in ANCHORS.items():
         fp = fps[ref]; fp.SetOrientationDegrees(rot); fp.SetPosition(P(x, y))
         placed_boxes.append(body_box(fp) if len(fp.Zones()) else pbox(fp)); record(fp)
@@ -270,7 +299,7 @@ def place_all(board):
             placed_boxes.append((min(xa, xb), min(ya, yb), max(xa, xb), max(ya, yb)))
 
     for gname, refs, regions in GROUPS:
-        todo = [r for r in refs if r in fps and r not in ANCHORS]
+        todo = [r for r in refs if r in fps and r not in ANCHORS and r not in buck_block.REFS]
         todo.sort(key=lambda r: (-(fps[r].GetPadCount()), r in NEAR))
         for ref in todo:
             fp = fps[ref]

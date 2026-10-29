@@ -20,6 +20,9 @@ Images: `layout_placement.png` (placement plus ratsnest), `layout_routed.png` (r
   which every standard 4-layer fab process can build.
 - Vias: 0.6 mm pad, 0.3 mm drill.
 - Copper-to-edge clearance: 0.4 mm.
+- Copper weight: not fixed yet. The AP63205 datasheet suggests 2 oz copper to help the
+  regulator shed heat. 1 oz is the usual cheaper default. Which to order is a fab choice to
+  settle before ordering.
 
 Net classes are in `tools/gen_route.py`, `NETCLASSES`:
 
@@ -125,6 +128,44 @@ Placement rules (`gen_layout.py`):
 Decoupling caps are placed against the pin they serve (`NEAR` table in `gen_layout.py`).
 Two-pin parts can rotate in 90° steps so that each pad faces its own net.
 
+### 3.1 5 V buck block (U1 AP63205 and its parts)
+
+A switching regulator's layout is part of the circuit, and the general placer only
+knows connectivity: in the first pass the input caps ended up 13–16 mm from U1 and the
+switching node was 18 mm of 0.55 mm track. So the buck is now a fixed, hand-designed block
+in `tools/buck_block.py`. `gen_layout.py` places it first, and `gen_route.py` draws its
+copper as locked tracks and vias before anything else, so the autorouter only connects
+VCC_12V into it and +5V out of it.
+
+The layout follows the AP63205 datasheet's layout guidance and the AP63205 EVB:
+
+```
+           U1 label  C6 label     L1 label
+    FB via o   [U1]  [C6]   +--------------+
+               VIN|GND  \_SW__|  L1 (SW|5V)  |
+    C5 label [C5 VIN|GND]      +--------------+
+    C1 label [C1 VIN|GND]  o   [C7 GND|5V]  C7 label
+    C2 label [C2 VIN|GND]  o   [C8 GND|5V]  C8 label
+                               [C9 GND|5V]  C9 label
+                     FB return o
+```
+
+| | Block | First pass |
+|----|----|----|
+| Input loop | C5 (100 nF) pads 1.8 mm from the VIN/GND pins, then C1 and C2 (10 µF) stacked below on 1 mm VIN and GND buses | input caps 13–16 mm away |
+| Bootstrap | C6 upright beside the BST/SW pins, about 2 mm away | ~19 mm |
+| SW node | one 1.5 mm wide strip, about 4.4 mm from the SW pin to L1 pad 1 | 18 mm of 0.55 mm track |
+| Output | C7, C8 (22 µF) and C9 (100 nF) under L1 on a 1 mm +5V bus; their GND ties straight across to the input-cap GND | routed |
+| GND | four vias in the input/output cap grounds to the In1 plane, plus the F.Cu pour | fan-out vias |
+| FB | U1 pin 1 senses +5V. It drops through a via next to the pin and runs on B.Cu to the output caps, with the In1 GND plane between it and the SW node | routed |
+
+The block's silkscreen references sit around its outside, level with their parts, since
+there's no room for a label beside each part. The GND fan-out step leaves the block's GND
+pads alone, because it has its own vias.
+
+Values are unchanged. The datasheet's typical circuit uses 4.7 µH; this board keeps
+6.8 µH, which is what the AP63205 EVB uses.
+
 ## 4. Results (committed run)
 
 | | |
@@ -149,7 +190,7 @@ Two-pin parts can rotate in 90° steps so that each pad faces its own net.
 
 | # | Area | What to do |
 |----|----|----|
-| 1 | **5 V buck (U1, L1, C1/C2/C5, C6, D1)** | Re-lay it by hand to the AP63205 datasheet layout: smallest input-cap loop, SW node as a short copper area rather than a track, FB away from SW. |
+| 1 | **5 V buck (U1, L1, C1/C2/C5, C6)** | **Done:** fixed block, §3.1. Left to check: whether to order 2 oz outer copper, which the datasheet suggests for heat (§1). |
 | 2 | **Resolver exciter (U13 to CN1)** | EXC_* carries ~100 mA at 10 kHz. Keep it away from SIN/COS and run the pairs side by side. |
 | 3 | **Analog inputs (IL1, IL2, UDC, SIN/COS, temps)** | Check that no PWM or exciter track runs parallel on an adjacent layer. Add a GND guard where it does. |
 | 4 | **PWM to CN2** | Six lines: check they are short, reference the In1 plane, and don't cross a plane gap. |
