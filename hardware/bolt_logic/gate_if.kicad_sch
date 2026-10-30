@@ -6329,7 +6329,7 @@
       (effects
         (font (size 1.27 1.27))
         (justify left)))
-    (property "Value" "74HCT10"
+    (property "Value" "SN74ACT10"
       (at 58.42 105.27 0)
       (effects
         (font (size 1.27 1.27))
@@ -6367,7 +6367,7 @@
       (effects
         (font (size 1.27 1.27))
         (justify left)))
-    (property "Value" "74HCT10"
+    (property "Value" "SN74ACT10"
       (at 101.6 105.27 0)
       (effects
         (font (size 1.27 1.27))
@@ -6405,7 +6405,7 @@
       (effects
         (font (size 1.27 1.27))
         (justify left)))
-    (property "Value" "74HCT10"
+    (property "Value" "SN74ACT10"
       (at 137.16 105.27 0)
       (effects
         (font (size 1.27 1.27))
@@ -6443,7 +6443,7 @@
       (effects
         (font (size 1.27 1.27))
         (justify left)))
-    (property "Value" "74HCT10"
+    (property "Value" "SN74ACT10"
       (at 165.1 129.4 0)
       (effects
         (font (size 1.27 1.27))

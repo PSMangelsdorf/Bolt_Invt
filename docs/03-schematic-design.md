@@ -19,7 +19,7 @@ Legend: **REUSE** = V6 circuit unchanged · **ADAPT** = V6 circuit, new values/h
    HC5FW700 sensors are analog, so the filter becomes a buffer. Keeping the same
    divider gives **k = 0.635 → `il1gain`/`il2gain` ≈ 2.25 digits/A** (supersedes 2.37).
 3. **The 74HCT573 is not a fault gate** — its OE is grounded. Hardware shutdown is the
-   CD74HC30 NAND → **PB12 = TIM1 break input** (section 4.4). This board uses a 74HCT10 for it.
+   CD74HC30 NAND → **PB12 = TIM1 break input** (section 4.4). This board uses a SN74ACT10 for it.
 
 ## 2. Block summary
 
@@ -136,7 +136,7 @@ CN1 L3 (IGN) ─ 124 kΩ ─ CN2 36/38   (replicates the OEM ~125 kΩ ignition s
   to this rail while the ADC reference doesn't track it, so the buck's tighter output
   is the more accurate source; the ferrite keeps switching noise out.
 - **3.3 V:** LD1117S33 from +5V (REUSE).
-- **TVS1** SMBJ26CA on VBAT; **−5 V (LM2664): DROP.**
+- **TVS1** SMBJ26CA (Littelfuse) on VBAT; **−5 V (LM2664): DROP.**
 - Mounting holes H1–H12 (plated) → CHASSIS → 0 Ω → GND (assembly option); H13/H14 NPTH.
 
 ### 4.2 MCU core (REUSE)
@@ -162,8 +162,9 @@ The gate board's own HC365 has its OEs grounded and there's no interlock, so dea
 is firmware's job (TIM1 dead-time generator).
 
 ### 4.4 Fault / break logic (ADAPT)
-3-input NAND, one gate of a **74HCT10** (U6) at 5 V. HCT is needed so the 3.3 V
-OCUR_OK level reads as high. Its output → **PWM_INHIBIT → PB12 (TIM1_BKIN)**. Each status
+3-input NAND, one gate of a **SN74ACT10** (U6, TI) at 5 V. Its TTL-level inputs (HCT or
+ACT, VIH 2.0 V) let the 3.3 V OCUR_OK level read as high. The 74HCT10D first chosen went out
+of stock at JLCPCB; the ACT10 has the same pinout. Its output → **PWM_INHIBIT → PB12 (TIM1_BKIN)**. Each status
 input gets the V6's 560 Ω + 10 nF filter, plus a **100 kΩ pull-down** so a missing or
 unplugged gate board reads as a fault.
 
@@ -382,7 +383,7 @@ with `kicad-cli` and checks every pin against the table (currently: exact match,
 duplicate references). PDF: `docs/bolt_logic_schematic.pdf`.
 
 Library symbols are used wherever KiCad has an exact or pin-identical part (value
-field carries the real part): 74LS573 → 74HCT573, 74LS10 → 74HCT10, 74LS21 → 74HC21,
+field carries the real part): 74LS573 → 74HCT573, 74LS10 → SN74ACT10, 74LS21 → 74HC21,
 CD4052B → 74HCT4052, MCP6002 → MCP6292, BTS443P → BTS6143D (same pinout). Custom symbols
 (`Bolt.kicad_sym`): CN1_GM48, BTS133TC, TCA0372.
 
