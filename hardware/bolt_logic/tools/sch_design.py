@@ -188,9 +188,10 @@ gi.c("C46", "100nF", "+5V", "GND")
 gi.r("R31", "10k", "GATE_OK_5V", "GATE_OK")
 gi.r("R32", "20k", "GATE_OK", "GND")
 # Hardware trip: PWM_INHIBIT = NAND(GATE_OK_5V, GATE_FLT_F, OCUR_OK). GATE_OK_5V is U5's AND of
-# HEALTH1-4, so this is the same logic as the earlier 8-input NAND. HCT so the 3.3 V OCUR_OK level
-# is valid at 5 V (owner: 74HCT10 instead of CD74HCT30, which JLCPCB doesn't stock).
-gi.add("U6", "74xx:74LS10", "74HCT10", SOIC14, {
+# HEALTH1-4, so this is the same logic as the earlier 8-input NAND. TTL-threshold inputs (HCT/ACT)
+# so the 3.3 V OCUR_OK level is valid at 5 V. Owner: SN74ACT10 (TI), stocked at JLCPCB, after
+# the CD74HCT30 and then the 74HCT10D ran out; same '10 pinout, VIH 2.0 V.
+gi.add("U6", "74xx:74LS10", "SN74ACT10", SOIC14, {
     1: "GATE_OK_5V", 2: "GATE_FLT_F", 13: "OCUR_OK", 12: "PWM_INHIBIT",
     3: "GND", 4: "GND", 5: "GND", 6: "NC", 9: "GND", 10: "GND", 11: "GND", 8: "NC", 7: "GND", 14: "+5V"})
 gi.c("C47", "100nF", "+5V", "GND")
