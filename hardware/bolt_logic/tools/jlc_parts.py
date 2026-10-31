@@ -86,7 +86,8 @@ PARTS = {
                                         "colour not specified; green proposed"),
     # ---------------------------------------------------------------- discretes
     ("SS54", "D_SMA"): ("C22452", "SS54", "40 V 5 A Schottky (MDD)", "lcsc", "smt", "same part as V6"),
-    ("SMBJ26CA", "D_SMB"): ("C3719606", "SMBJ26CA", "26 V bidirectional TVS, 600 W (Bourns)", "lcsc", "smt", ""),
+    ("SMBJ26CA", "D_SMB"): ("C83332", "SMBJ26CA", "26 V bidirectional TVS, 600 W (Littelfuse)", "lcsc", "smt",
+                            "owner: Littelfuse instead of Bourns C3719606 (out of stock at JLCPCB)"),
     ("BAT54S", "SOT-23"): ("C47546", "BAT54S,215", "dual Schottky, series (Nexperia)", "lcsc", "smt", ""),
     ("2N7002", "SOT-23"): ("C8545", "2N7002", "60 V N-MOSFET (JSCJ)", "lcsc", "smt", "new in v0.1: BTS443P input switch"),
     ("BTS6143D", "TO-252-4"): ("C95232", "BTS6143D", "PROFET high-side 10 mohm, PG-TO252-5-11 (Infineon)", "lcsc",
@@ -104,8 +105,9 @@ PARTS = {
                                                   "smt", "V6 BOM lists C5608, which LCSC shows as the HC part"),
     ("74HC21", "SOIC-14_3.9x8.7mm_P1.27mm"): ("C5617", "74HC21D,653", "dual 4-input AND (Nexperia)", "lcsc",
                                               "smt", ""),
-    ("74HCT10", "SOIC-14_3.9x8.7mm_P1.27mm"): ("C547236", "74HCT10D,653", "triple 3-input NAND, HCT (Nexperia)",
-                                               "lcsc", "smt", "owner: replaces CD74HCT30 (one gate used)"),
+    ("SN74ACT10", "SOIC-14_3.9x8.7mm_P1.27mm"): ("C2861739", "SN74ACT10DR", "triple 3-input NAND, ACT (TI)",
+                                                 "lcsc", "smt", "owner: replaces 74HCT10D C547236 (out of stock); "
+                                                 "TTL-level inputs like HCT; low stock (89 at LCSC, Oct 2026)"),
     ("LM2901", "SOIC-14_3.9x8.7mm_P1.27mm"): ("C7932", "LM2901DR", "quad comparator (TI)", "lcsc", "smt", ""),
     ("74HCT4052", "SOIC-16_3.9x9.9mm_P1.27mm"): ("C469908", "CD74HCT4052M96", "dual 4:1 analog mux, HCT (TI)",
                                                  "lcsc", "smt", ""),

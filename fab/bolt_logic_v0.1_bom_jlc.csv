@@ -44,13 +44,13 @@ green 0805,LED2,LED_0805_2012Metric,C2297
 1.5 k 1%,"R101,R103,R105,R107,R109",R_0805_2012Metric,C4310
 120 ohm 1% (CAN termination),R123,R_0805_2012Metric,C17437
 4 x 10 k convex array,"RN1,RN2",R_Array_Convex_4x0603,C29718
-"26 V bidirectional TVS, 600 W (Bourns)",TVS1,D_SMB,C3719606
+"26 V bidirectional TVS, 600 W (Littelfuse)",TVS1,D_SMB,C83332
 5 V 2 A sync buck (Diodes),U1,TSOT-23-6,C2071056
 3.3 V LDO (ST),U2,SOT-223-3_TabPin2,C86781
 MCU,U3,LQFP-64_10x10mm_P0.5mm,C8735
 octal latch (Nexperia),U4,SOIC-20W_7.5x12.8mm_P1.27mm,C5209384
 dual 4-input AND (Nexperia),U5,SOIC-14_3.9x8.7mm_P1.27mm,C5617
-"triple 3-input NAND, HCT (Nexperia)",U6,SOIC-14_3.9x8.7mm_P1.27mm,C547236
+"triple 3-input NAND, ACT (TI)",U6,SOIC-14_3.9x8.7mm_P1.27mm,C2861739
 dual RRIO op-amp (Microchip),"U7,U8,U12,U14",SOIC-8_3.9x4.9mm_P1.27mm,C556929
 quad comparator (TI),"U9,U10",SOIC-14_3.9x8.7mm_P1.27mm,C7932
 "dual 4:1 analog mux, HCT (TI)",U11,SOIC-16_3.9x9.9mm_P1.27mm,C469908
