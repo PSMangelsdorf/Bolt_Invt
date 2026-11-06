@@ -1,0 +1,710 @@
+#!/usr/bin/env python3
+"""Populate the mechanical board with the schematic's footprints and nets, place them,
+and set up stackup / rules.  Stage 1 of layout (routing is done separately).
+
+    python3 tools/gen_mech.py && python3 tools/gen_layout.py
+
+Placement is table-driven: anchors for ICs/connectors below, plus a greedy
+connectivity-driven placer for the passives inside each functional region.
+Coordinates use the design frame of gen_mech.py (component side, origin = H1,
++X right, +Y up, mm).
+"""
+import math
+import os
+import subprocess
+import sys
+import tempfile
+
+import pcbnew
+from pcbnew import FromMM, ToMM, VECTOR2I
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+PROJ = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+import kisym  # noqa: E402
+from gen_mech import P, to_design, SHEET_ORIGIN, CN1, CN2  # noqa: E402
+import buck_block  # noqa: E402
+
+PCB = os.path.join(PROJ, "bolt_logic.kicad_pcb")
+SCH = os.path.join(PROJ, "bolt_logic.kicad_sch")
+SYS_FP = "/usr/share/kicad/footprints"
+FIXED = {"CN1", "CN2"} | {"H%d" % i for i in range(1, 15)}   # placed by gen_mech.py
+# package pins that are NC on the silicon and have no symbol pin (74HC21: 3, 11; 74HCT30: 9, 10, 13)
+PACKAGE_NC = {("U5", "3"), ("U5", "11")}
+
+
+# ------------------------------------------------------------------ netlist
+def read_netlist():
+    with tempfile.TemporaryDirectory() as td:
+        out = os.path.join(td, "n.net")
+        subprocess.run(["kicad-cli", "sch", "export", "netlist", "--format", "kicadsexpr", "-o", out, SCH],
+                       check=True, capture_output=True)
+        t = kisym.parse(open(out).read())
+    # nets drawn only with wires get automatic names in the export ("Net-(R1-Pad2)"): the board
+    # uses the design table's names (sch_design.py), matched pin by pin
+    import sch_design
+    design = {(p.ref, num): net for sh in sch_design.SHEETS for p in sh.parts for num, net in p.pins.items()}
+    comps = {}
+    for c in kisym.find(kisym.first(t, "components"), "comp"):
+        ref = kisym.first(c, "ref")[1]
+        fp = kisym.first(c, "footprint")
+        comps[ref] = dict(value=kisym.first(c, "value")[1], footprint=fp[1] if fp else "",
+                          dnp=any(p[1] == "dnp" for p in kisym.find(c, "property")))
+    nets = {}
+    for n in kisym.find(kisym.first(t, "nets"), "net"):
+        name = kisym.first(n, "name")[1]
+        keys = [(kisym.first(node, "ref")[1], kisym.first(node, "pin")[1]) for node in kisym.find(n, "node")]
+        if not name.startswith("unconnected-"):
+            names = {design.get(k) for k in keys} - {None, "NC"}
+            if len(names) != 1:
+                raise SystemExit("netlist net %s does not match one design net: %s" % (name, names))
+            name = names.pop()
+        for k in keys:
+            nets[k] = name
+    return comps, nets
+
+
+def load_fp(fpid):
+    lib, name = fpid.split(":", 1)
+    path = os.path.join(PROJ, lib + ".pretty") if lib == "Bolt" else os.path.join(SYS_FP, lib + ".pretty")
+    fp = pcbnew.FootprintLoad(path, name)
+    if fp is None:
+        raise FileNotFoundError("footprint %s not found" % fpid)
+    fp.SetFPID(pcbnew.LIB_ID(lib, name))
+    return fp
+
+
+def populate(board, comps, nets):
+    netinfo = {}
+    for name in sorted(set(nets.values())):
+        if name.startswith("unconnected-"):
+            continue
+        ni = pcbnew.NETINFO_ITEM(board, name)
+        board.Add(ni)
+        netinfo[name] = ni
+    existing = {fp.GetReference(): fp for fp in board.GetFootprints()}
+    for ref, c in sorted(comps.items()):
+        fp = existing.get(ref)
+        if fp is None:
+            fp = load_fp(c["footprint"])
+            fp.SetReference(ref)
+            fp.SetValue(c["value"])
+            fp.SetPosition(P(-60, 120))           # parking spot off-board until placed
+            board.Add(fp)
+        if c["dnp"]:
+            fp.SetAttributes(fp.GetAttributes() | pcbnew.FP_EXCLUDE_FROM_BOM | pcbnew.FP_EXCLUDE_FROM_POS_FILES)
+            fp.SetValue(c["value"])
+    # assign nets & cross-check pads <-> netlist
+    errors, seen = [], set()
+    fps = {fp.GetReference(): fp for fp in board.GetFootprints()}
+    for (ref, pin), name in nets.items():
+        fp = fps.get(ref)
+        if fp is None:
+            errors.append("%s missing on board" % ref); continue
+        pads = [p for p in fp.Pads() if p.GetNumber() == pin]
+        if not pads:
+            errors.append("%s pad %s missing in footprint %s" % (ref, pin, fp.GetFPID().GetLibItemName()))
+            continue
+        for p in pads:
+            if not name.startswith("unconnected-"):
+                p.SetNet(netinfo[name])
+        seen.add((ref, pin))
+    # library rule areas (ESP32 antenna keep-out) list F/In1/B only: extend them to every copper layer
+    for fp in board.GetFootprints():
+        for z in fp.Zones():
+            if z.GetIsRuleArea():
+                z.SetLayerSet(pcbnew.LSET.AllCuMask())
+    # stock ESP32-WROOM footprint has 0.2 mm thermal-via drills; open them to the 0.3 mm board minimum
+    for fp in board.GetFootprints():
+        for p in fp.Pads():
+            if p.GetAttribute() == pcbnew.PAD_ATTRIB_PTH and p.GetDrillSize().x < FromMM(0.3):
+                p.SetDrillSize(VECTOR2I(FromMM(0.3), FromMM(0.3)))
+                if p.GetSize().x < FromMM(0.5):
+                    p.SetSize(VECTOR2I(FromMM(0.5), FromMM(0.5)))
+    for fp in board.GetFootprints():
+        for p in fp.Pads():
+            key = (fp.GetReference(), p.GetNumber())
+            if p.GetNumber() and key not in seen and key not in PACKAGE_NC \
+                    and p.GetAttribute() != pcbnew.PAD_ATTRIB_NPTH:
+                errors.append("%s pad %s not in netlist" % key)
+    return errors
+
+
+
+# ------------------------------------------------------------------ placement data
+# Regions are lists of rectangles (x0, y0, x1, y1) in the design frame.
+GROUPS = [
+    # name, refs, regions (x0, y0, x1, y1) in the design frame (origin H1, +y up).
+    # Kept clear: 10 mm around CN1 (left tab, y ~38-79) and CN2 (bottom left, x ~-1-48, y ~13-16).
+    # v0.2a floorplan (forum review): power entry at the top left beside CN1's VBAT pins (M row),
+    # contactor drivers right beside CN1 (just outside the 10 mm zone), CAN / resolver / inputs
+    # beside the CN1 pins they serve, current sense next to CN2, the MCU centred with the gate
+    # logic below it, WiFi at the bottom right.
+    ("power", ["TVS1", "Q1", "Q3", "R1", "R2", "R3", "D1", "C1", "C2", "C3", "C4", "C5", "U1", "C6", "L1", "C7", "C8",
+               "C9", "U2", "C10", "C11", "C12", "FB1", "C13", "C14", "Q2", "Q4", "R4", "R5", "R6", "C15", "C16", "R7"],
+     [(12, 79, 100, 104.5)]),
+    ("out", ["U20", "U21", "U22", "R120", "R121", "R122"], [(12, 27, 42, 74)]),
+    ("mcu", ["U3", "C20", "C21", "C22", "C23", "C24", "L2", "C25", "C26", "C27", "R10", "R11", "Y1", "C28", "C29",
+             "Y2", "C30", "C31", "LED1", "R12", "LED2", "R13", "J1", "R14"],
+     [(120, 34, 186, 79)]),
+    ("can", ["U23", "C109", "R123", "R124"], [(42, 46, 62, 68)]),
+    ("resolver", ["U12", "U13", "U14"] + ["R%d" % i for i in range(60, 94) if i != 66] +
+     ["C%d" % i for i in range(70, 90) if i != 74],
+     [(42, 27, 118, 46), (62, 46, 118, 68)]),
+    ("vin", ["R%d" % i for i in range(100, 118)] + ["C%d" % i for i in range(100, 109)] + ["F1", "F2", "F3"],
+     [(42, 68, 118, 79), (100, 79, 128, 104.5)]),
+    ("analog", ["U7", "U8", "U9", "U10", "U11", "R40", "R41", "R42", "R43", "R44", "R45", "R46", "R47", "R48", "C50",
+                "C51", "C52", "C53", "C54", "C55", "C56", "C57", "R49", "C58", "R50", "C59", "C60", "C61", "R51",
+                "C62", "R52", "R53", "R54", "R55", "R56", "C63", "C64", "C65", "C66", "C67"],
+     [(59, -2.5, 116, 27), (-2.5, -2.5, 59, 1.5), (116, 4, 130, 27)]),
+    ("gate", ["U4", "C40", "RN1", "RN2", "R20", "R21", "R22", "R23", "R24", "R25", "R26", "R27", "R28", "R29", "R30",
+              "C41", "C42", "C43", "C44", "C45", "U5", "C46", "R31", "R32", "U6", "C47", "R33", "R34", "R35", "D2",
+              "R36", "C48", "R37", "TP1", "TP2"],
+     [(130, -2.5, 190, 27), (120, 27, 190, 34)]),
+    ("wifi", ["U30", "U31", "C123", "C124", "C120", "C121", "R130", "C122", "J4"], [(190, 2, 270, 24.5)]),
+]
+# ESP32-WROOM-32E (PCB antenna, as V6): antenna end of the module (local y = -15.75) flush with
+# the bottom board edge (y = -5), per Espressif's placement guidance. The footprint's 48 mm wide
+# antenna keep-out then covers the last ~6 mm of board under the antenna. The bottom edge between
+# H5 (x 141) and H11 (x 268) is the only edge stretch long enough with no mounting hole in it.
+# U3 rotation 90 (OSC pins toward the bottom): the shortest ratsnest of the four (MCU_ROT=... --dry to compare).
+MCU_AT = (145.0, 54.0)
+ANCHORS = {"U3": MCU_AT + (int(os.environ.get("MCU_ROT", "90")),), "U30": (220.0, -5.0 + 15.75, 180),
+           # power entry: the TVS is the first part on VBAT, right beside CN1's M row (VBAT pins)
+           "TVS1": (16.5, 83.0, 90),
+           # contactor drivers beside CN1 rows B/E, tab (= output) toward the connector
+           "U20": (24.0, 60.0, 180), "U21": (24.0, 47.0, 180), "U22": (24.0, 34.0, 180),
+           # exciter power op-amp: supply pin 1 toward the free space on its right, for its decoupling
+           "U13": (69.5, 58.9, 180)}
+# decoupling / bulk caps: place next to a specific pad
+NEAR = {"C40": ("U4", "20"), "C46": ("U5", "14"), "C47": ("U6", "14"), "C54": ("U7", "8"), "C57": ("U8", "8"),
+        "C60": ("U9", "3"), "C61": ("U10", "3"), "C62": ("U11", "16"), "C75": ("U12", "8"), "C79": ("U13", "1"),
+        "C80": ("U13", "1"), "C84": ("U14", "8"), "C109": ("U23", "3"), "C20": ("U3", "19"), "C21": ("U3", "32"),
+        "C22": ("U3", "48"), "C23": ("U3", "64"), "C24": ("U3", "1"), "C25": ("U3", "13"), "C26": ("U3", "13"),
+        "C27": ("U3", "7"), "C10": ("U2", "3"),
+        "C11": ("U2", "2"), "C12": ("U2", "2"), "C13": ("FB1", "2"), "C14": ("FB1", "2"), "C15": ("Q2", "1"), "Q3": ("Q1", "2"), "Q4": ("Q2", "2"),
+        "C16": ("Q2", "1"), "C3": ("D1", "1"), "C4": ("D1", "1"),
+        # oscillators: crystal at its MCU pins, load caps at the crystal
+        "Y1": ("U3", "5"), "Y2": ("U3", "3"), "C28": ("Y1", "1"), "C29": ("Y1", "2"),
+        "C30": ("Y2", "1"), "C31": ("Y2", "2"),
+        # ESP32 supply: own LDO; bulk + 10 uF + 100 nF at the module's 3V3 pin; EN RC at pin 3
+        "U31": ("U30", "2"), "C120": ("U30", "2"), "C121": ("U30", "2"), "C124": ("U30", "2"), "C123": ("U31", "3"),
+        "R130": ("U30", "3"), "C122": ("U30", "3"),
+        "R120": ("U20", "1"), "R121": ("U21", "1"), "R122": ("U22", "1")}
+# placed first in their group, right after the ICs (jrbe: oscillators and decoupling first)
+FIRST = {"Y1", "Y2", "C28", "C29", "C30", "C31"}
+STEP = 0.75
+GAP = 1.5                           # between placement boxes (which include the silk reference)
+CONNECTOR_CLEARANCE = 10.0          # owner: no components within 10 mm of CN1 / CN2 (hand soldering)
+GROUP_GAP = {}                      # per-group spacing override (mm), e.g. {"resolver": 1.0}
+NEAR_GAP = 0.8                      # decoupling / load parts may sit closer to their IC
+
+
+def ref_upright(fp):
+    """Forum review (Jack Bauer): every reference reads the same way. Horizontal, centred just
+    above the part body (design frame), whatever the footprint's rotation."""
+    t = fp.Reference()
+    if not t.IsVisible() or t.GetLayer() not in (pcbnew.F_SilkS, pcbnew.B_SilkS):
+        return
+    t.SetKeepUpright(False)
+    t.SetTextAngleDegrees(-fp.GetOrientationDegrees())
+    x0, y0, x1, y1 = body_box(fp)
+    h = pcbnew.ToMM(t.GetTextHeight())
+    t.SetPosition(P((x0 + x1) / 2, y1 + 0.35 + h / 2))
+
+
+def pbox(fp):
+    """Placement extent: dbox plus the silkscreen reference text, so references stay legible
+    (never on top of a neighbour)."""
+    x0, y0, x1, y1 = dbox(fp)
+    ref = fp.Reference()
+    if ref.IsVisible() and ref.GetLayer() in (pcbnew.F_SilkS, pcbnew.B_SilkS):
+        bb = ref.GetBoundingBox()
+        xa, ya = to_design(VECTOR2I(bb.GetLeft(), bb.GetTop()))
+        xb, yb = to_design(VECTOR2I(bb.GetRight(), bb.GetBottom()))
+        x0, y0, x1, y1 = min(x0, xa, xb), min(y0, ya, yb), max(x1, xa, xb), max(y1, ya, yb)
+    return x0, y0, x1, y1
+
+
+def dbox(fp):
+    """Footprint extent (pads + graphics, no text) in the design frame: x0, y0, x1, y1."""
+    bb = fp.GetBoundingBox(False, False)
+    xa, ya = to_design(VECTOR2I(bb.GetLeft(), bb.GetTop()))
+    xb, yb = to_design(VECTOR2I(bb.GetRight(), bb.GetBottom()))
+    return min(xa, xb), min(ya, yb), max(xa, xb), max(ya, yb)
+
+
+def body_box(fp):
+    """Pads + fab outline only (the courtyard of a module with an antenna keep-out spans the
+    whole keep-out, which would block parts that belong right next to the module)."""
+    pts = []
+    for p in fp.Pads():
+        b = p.GetBoundingBox()
+        pts += [to_design(VECTOR2I(b.GetLeft(), b.GetTop())), to_design(VECTOR2I(b.GetRight(), b.GetBottom()))]
+    for g in fp.GraphicalItems():
+        if g.GetLayer() in (pcbnew.F_Fab, pcbnew.B_Fab) and g.GetClass() != "PCB_TEXT" and "TEXT" not in g.GetClass():
+            b = g.GetBoundingBox()
+            pts += [to_design(VECTOR2I(b.GetLeft(), b.GetTop())), to_design(VECTOR2I(b.GetRight(), b.GetBottom()))]
+    xs = [q[0] for q in pts]; ys = [q[1] for q in pts]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def keepouts(board):
+    ko = []
+    for fp in board.GetFootprints():
+        ref = fp.GetReference()
+        if ref.startswith("H"):
+            x, y = to_design(fp.GetPosition())
+            r = 4.0 if ref not in ("H13", "H14") else 3.0
+            ko.append((x - r, y - r, x + r, y + r))
+        elif ref in ("CN1", "CN2"):
+            x0, y0, x1, y1 = dbox(fp)                    # pads, locating holes and body outline
+            m = CONNECTOR_CLEARANCE
+            ko.append((x0 - m, y0 - m, x1 + m, y1 + m))
+    ko.append((113.5, -6, 130, 3.5))                     # notch
+    ko.append(TEXT_AREA)                                 # board text (board_silk)
+    return ko
+
+
+def inside_board(b):
+    x0, y0, x1, y1 = b
+    # 2.5 mm from the edge: the chassis ring (F/B, gen_route.py) runs along it
+    if x0 < -2.5 or x1 > 270.5 or y0 < -2.5 or y1 > 104.5:
+        return False
+    # chamfer: line (253.4,107)-(273,67.7); stay below it with 3 mm margin
+    for (x, y) in ((x1, y1), (x0, y1), (x1, y0)):
+        if x > 250 and y > 107 - (x - 253.4) * (39.3 / 19.6) - 3.0:
+            return False
+    return True
+
+
+def overlap(a, b, gap=None):
+    gap = GAP if gap is None else gap
+    return not (a[2] + gap <= b[0] or b[2] + gap <= a[0] or a[3] + gap <= b[1] or b[3] + gap <= a[1])
+
+
+def place_block(fps):
+    """Fixed 5 V buck block (tools/buck_block.py): U1 at its anchor, every other part at its
+    offset, rotated so pad 1 faces the requested side. Returns the block's placement box."""
+    u1 = fps["U1"]
+    u1.SetOrientationDegrees(buck_block.U1_ROT); u1.SetPosition(P(*buck_block.U1_AT))
+    ux, uy = pcbnew.ToMM(u1.GetPosition().x), pcbnew.ToMM(u1.GetPosition().y)
+    want = {"left": (-1, 0), "right": (1, 0), "up": (0, -1), "down": (0, 1)}
+    for ref, (dx, dy, side) in buck_block.PARTS.items():
+        fp = fps[ref]
+        pos = VECTOR2I(FromMM(ux + dx), FromMM(uy + dy))
+        for rot in (0, 90, 180, 270):
+            fp.SetOrientationDegrees(rot); fp.SetPosition(pos)
+            p1 = [p for p in fp.Pads() if p.GetNumber() == "1"][0].GetPosition()
+            vx, vy = pcbnew.ToMM(p1.x - pos.x), pcbnew.ToMM(p1.y - pos.y)
+            wx, wy = want[side]
+            if vx * wx + vy * wy > 0.5 * math.hypot(vx, vy):
+                break
+        else:
+            raise SystemExit("buck block: no rotation puts %s pad 1 %s" % (ref, side))
+    for ref, (lx, ly) in buck_block.LABELS.items():
+        t = fps[ref].Reference()
+        t.SetPosition(VECTOR2I(FromMM(ux + lx), FromMM(uy + ly))); t.SetTextAngleDegrees(0)
+    boxes = [pbox(fps[r]) for r in buck_block.REFS]
+    return (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
+
+
+def place_all(board):
+    fps = {fp.GetReference(): fp for fp in board.GetFootprints()}
+    placed_boxes = keepouts(board)
+    placed_pads = {}                                    # net -> list of (x, y)
+
+    def record(fp):
+        for p in fp.Pads():
+            n = p.GetNetname()
+            if n and n != "GND":
+                placed_pads.setdefault(n, []).append(to_design(p.GetPosition()))
+
+    for r in FIXED:
+        if r in fps:
+            record(fps[r])
+
+    def shape_at(fp, rot):
+        fp.SetOrientationDegrees(rot)
+        fp.SetPosition(P(0, 0))
+        ref_upright(fp)
+        x0, y0, x1, y1 = pbox(fp)
+        pads = [(to_design(p.GetPosition()), p.GetNetname(), p.GetNumber()) for p in fp.Pads()]
+        return (x0, y0, x1, y1), pads
+
+    failures = []
+    placed_boxes.append(place_block(fps))
+    for r in buck_block.REFS:
+        record(fps[r])
+    for ref, (x, y, rot) in ANCHORS.items():
+        fp = fps[ref]; fp.SetOrientationDegrees(rot); fp.SetPosition(P(x, y)); ref_upright(fp)
+        placed_boxes.append(body_box(fp) if len(fp.Zones()) else pbox(fp)); record(fp)
+        for z in fp.Zones():                            # footprint rule areas (antenna keep-out)
+            bb = z.GetBoundingBox()
+            xa, ya = to_design(VECTOR2I(bb.GetLeft(), bb.GetTop()))
+            xb, yb = to_design(VECTOR2I(bb.GetRight(), bb.GetBottom()))
+            placed_boxes.append((min(xa, xb), min(ya, yb), max(xa, xb), max(ya, yb)))
+
+    for gname, refs, regions in GROUPS:
+        todo = [r for r in refs if r in fps and r not in ANCHORS and r not in buck_block.REFS]
+        # Each IC (and every part a NEAR entry points at) is followed straight away by its own
+        # decoupling / load parts, so they get the spots next to its pins before anything else
+        # (jrbe: oscillators and decoupling first). Children of anchored parts go first of all.
+        children = {}
+        for c, (t, _) in NEAR.items():
+            children.setdefault(t, []).append(c)
+        todo_set, order = set(todo), []
+
+        def add(r):
+            if r in order or r not in todo_set:
+                return
+            order.append(r)
+            for c in sorted(children.get(r, []), key=lambda c: (c not in FIRST, c)):
+                add(c)
+        for a in ANCHORS:
+            for c in sorted(children.get(a, []), key=lambda c: (c not in FIRST, c)):
+                add(c)
+        heads = sorted((r for r in todo if r not in NEAR or NEAR[r][0] not in todo_set and NEAR[r][0] not in ANCHORS),
+                       key=lambda r: (0 if fps[r].GetPadCount() >= 6 or r in children else 1, -fps[r].GetPadCount()))
+        for r in heads:
+            add(r)
+        todo = order
+        for ref in todo:
+            fp = fps[ref]
+            best = None
+            for rot in (0, 90, 180, 270):          # all four, so an IC's supply pin can face free space
+                (bx0, by0, bx1, by1), pads = shape_at(fp, rot)
+                for (rx0, ry0, rx1, ry1) in regions:
+                    x = rx0 - bx0
+                    while x + bx1 <= rx1:
+                        y = ry0 - by0
+                        while y + by1 <= ry1:
+                            box = (x + bx0, y + by0, x + bx1, y + by1)
+                            gap = NEAR_GAP if ref in NEAR else GROUP_GAP.get(gname)
+                            if inside_board(box) and not any(overlap(box, o, gap) for o in placed_boxes):
+                                cost = 0.0
+                                if ref in NEAR:
+                                    tr, tp = NEAR[ref]
+                                    tpad = [p for p in fps[tr].Pads() if p.GetNumber() == tp][0]
+                                    tx, ty = to_design(tpad.GetPosition())
+                                    own = [(px, py) for (px, py), n, _ in pads if n == tpad.GetNetname()] or \
+                                          [(px, py) for (px, py), n, _ in pads if n != "GND"] or [(0, 0)]
+                                    cost = min(math.hypot(px + x - tx, py + y - ty) for px, py in own)
+                                    # orient the other pad(s) toward their own nets too (e.g. a bootstrap cap)
+                                    for (px, py), n, _ in pads:
+                                        if n and n not in ("GND", tpad.GetNetname()) and n in placed_pads:
+                                            cost += 0.3 * min(math.hypot(px + x - qx, py + y - qy)
+                                                              for qx, qy in placed_pads[n])
+                                else:
+                                    for (px, py), n, _ in pads:
+                                        if n and n != "GND" and n in placed_pads:
+                                            cost += min(math.hypot(px + x - qx, py + y - qy)
+                                                        for qx, qy in placed_pads[n])
+                                    rcx = sum((a + c) / 2 for a, _, c, _ in regions) / len(regions)
+                                    rcy = sum((b + d) / 2 for _, b, _, d in regions) / len(regions)
+                                    cost += 0.05 * math.hypot(x - rcx, y - rcy)
+                                if best is None or cost < best[0]:
+                                    best = (cost, rot, x, y, box)
+                            y += STEP
+                        x += STEP
+            if best is None:
+                failures.append((gname, ref)); continue
+            _, rot, x, y, box = best
+            fp.SetOrientationDegrees(rot); fp.SetPosition(P(x, y))
+            placed_boxes.append(box); record(fp)
+    return failures
+
+
+def clear_own_silk(board):
+    """Slide a reference off its own footprint's filled pin-1 mark (SOT-23 etc.): the
+    placer keeps references clear of other parts, not of their own outline. Moves text only,
+    outward from the footprint centre in 0.2 mm steps, and never onto another part."""
+    others = [(fp, fp.GetBoundingBox(False, False)) for fp in board.GetFootprints()]
+    moved = []
+    for fp in board.GetFootprints():
+        t = fp.Reference()
+        if not t.IsVisible() or t.GetLayer() != pcbnew.F_SilkS:
+            continue
+        # filled marks (pin-1 triangles); outline strokes are already kept clear by the footprint
+        silk = [g.GetBoundingBox() for g in fp.GraphicalItems()
+                if g.GetLayer() == pcbnew.F_SilkS and hasattr(g, "GetShape") and g.GetShape() == pcbnew.SHAPE_T_POLY]
+        hit = lambda: any(t.GetBoundingBox().Intersects(g) for g in silk)
+        if not hit():
+            continue
+        c, p0 = fp.GetPosition(), t.GetPosition()
+        dx, dy = p0.x - c.x, p0.y - c.y
+        d = math.hypot(dx, dy) or 1.0
+        for k in range(1, 9):
+            t.SetPosition(VECTOR2I(int(p0.x + dx / d * FromMM(0.2 * k)), int(p0.y + dy / d * FromMM(0.2 * k))))
+            tb = t.GetBoundingBox()
+            if not hit() and not any(o is not fp and tb.Intersects(b) for o, b in others):
+                moved.append(fp.GetReference())
+                break
+        else:
+            t.SetPosition(p0)
+    return moved
+
+
+def ratsnest_length(board):
+    """Sum over nets (GND and the plane nets omitted) of a minimum spanning tree over the pads."""
+    skip = {"GND", "+3V3", "+5V", "VCC_12V", "ESP_3V3", "CHASSIS"}
+    nets = {}
+    for fp in board.GetFootprints():
+        for p in fp.Pads():
+            n = p.GetNetname()
+            if n and n not in skip and not n.startswith("unconnected-"):
+                nets.setdefault(n, []).append(to_design(p.GetPosition()))
+    total = 0.0
+    for pts in nets.values():
+        cur, rest = [pts[0]], pts[1:]
+        while rest:
+            d, b = min((math.dist(a, b), b) for a in cur for b in rest)
+            total += d; cur.append(b); rest.remove(b)
+    return total
+
+
+def lock_fixed(board):
+    """Forum review (jrbe): mounting holes (and the two connectors) locked in the layout."""
+    for fp in board.GetFootprints():
+        if fp.GetReference() in FIXED:
+            fp.SetLocked(True)
+
+
+# ------------------------------------------------------------------ board silkscreen
+# Owner's text, in the empty area between H7/H8/H9/H12 above the ESP32 (design frame, mm).
+TEXT_AREA = (196.0, 25.0, 262.0, 61.0)
+BOARD_TEXT = [  # (text, height mm, stroke mm)
+    ("OPEN INVERTER", 3.0, 0.45),
+    ("CHEVY BOLT INVERTER LOGIC BOARD V0.2A", 1.8, 0.25),
+    ("OPENINVERTER.ORG", 1.8, 0.25),
+    ("COPYRIGHT 2026", 1.5, 0.2),
+    ("D. MAGUIRE", 1.5, 0.2),
+    ("J. HUEBNER", 1.5, 0.2),
+    ("I. KELLY", 1.5, 0.2),
+    ("P.S.MANGELSDORF VIA CLAUDE", 1.5, 0.2),
+]
+SILK_W = 0.15                       # JLCPCB minimum silkscreen line width
+
+
+def board_silk(board):
+    """Board-level silkscreen, owned by this script (any earlier board-level silk is replaced):
+    the owner's text block, and outline / pin labels for CN1 and CN2, whose footprints carry
+    no silkscreen. CN2 sits on the bottom but is soldered from the top, so it is marked on
+    both sides. Returns the text block's extent (design frame)."""
+    for d in list(board.GetDrawings()):
+        if d.GetLayer() in (pcbnew.F_SilkS, pcbnew.B_SilkS) and d.GetClass() in ("PCB_TEXT", "PCB_SHAPE"):
+            board.Remove(d)
+
+    def text(s, x, y, h, w, layer=pcbnew.F_SilkS):
+        t = pcbnew.PCB_TEXT(board)
+        t.SetText(s); t.SetLayer(layer)
+        t.SetTextSize(VECTOR2I(FromMM(h), FromMM(h))); t.SetTextThickness(FromMM(w))
+        t.SetHorizJustify(pcbnew.GR_TEXT_H_ALIGN_CENTER); t.SetVertJustify(pcbnew.GR_TEXT_V_ALIGN_CENTER)
+        t.SetMirrored(layer == pcbnew.B_SilkS)
+        t.SetPosition(P(x, y)); board.Add(t)
+        return t
+
+    def rect(x0, y0, x1, y1, layer):
+        for a, b in (((x0, y0), (x1, y0)), ((x1, y0), (x1, y1)), ((x1, y1), (x0, y1)), ((x0, y1), (x0, y0))):
+            sh = pcbnew.PCB_SHAPE(board); sh.SetShape(pcbnew.SHAPE_T_SEGMENT)
+            sh.SetLayer(layer); sh.SetWidth(FromMM(SILK_W)); sh.SetStart(P(*a)); sh.SetEnd(P(*b))
+            board.Add(sh)
+
+    # ---- owner's text block, centred in TEXT_AREA
+    x0, y0, x1, y1 = TEXT_AREA
+    pitch = [h * 1.6 for _, h, _ in BOARD_TEXT]
+    y = (y0 + y1) / 2 + sum(pitch) / 2 - pitch[0] / 2
+    items = []
+    for (s, h, w), dy in zip(BOARD_TEXT, pitch):
+        items.append(text(s, (x0 + x1) / 2, y, h, w)); y -= dy
+    boxes = [t.GetBoundingBox() for t in items]
+    xa, ya = to_design(VECTOR2I(min(b.GetLeft() for b in boxes), min(b.GetTop() for b in boxes)))
+    xb, yb = to_design(VECTOR2I(max(b.GetRight() for b in boxes), max(b.GetBottom() for b in boxes)))
+    extent = (min(xa, xb), min(ya, yb), max(xa, xb), max(ya, yb))
+    if not (x0 <= extent[0] and extent[2] <= x1 and y0 <= extent[1] and extent[3] <= y1):
+        raise SystemExit("board text %s does not fit TEXT_AREA %s" % (extent, TEXT_AREA))
+    fps = {fp.GetReference(): fp for fp in board.GetFootprints()}
+
+    # ---- CN1 (top, through-hole): outline, row letters beside column 1, reference
+    xs, ys = list(CN1["cols_x"].values()), list(CN1["rows_y"].values())
+    m = CN1["pad"] / 2 + 0.6
+    rect(min(xs) - m, min(ys) - m, max(xs) + m, max(ys) + m, pcbnew.F_SilkS)
+    for row, ry in CN1["rows_y"].items():
+        text(row, max(xs) + m + 1.0, ry, 1.0, SILK_W)
+    text("1", max(xs), max(ys) + m + 1.0, 1.0, SILK_W)                  # column 1, above row M
+    ref = fps["CN1"].Reference()
+    ref.SetLayer(pcbnew.F_SilkS); ref.SetTextSize(VECTOR2I(FromMM(1.5), FromMM(1.5)))
+    ref.SetTextThickness(FromMM(0.2)); ref.SetPosition(P(-2.5, max(ys) + m + 2.6))
+
+    # ---- CN2 (bottom receptacle, soldered from the top): outline and pin numbers both sides
+    px, py = CN2["pin1"]
+    xl, xr = px - CN2["pitch"] * (CN2["n_per_row"] - 1), px
+    yt, yb2 = py, py - CN2["row"]
+    m = CN2["pad"] / 2 + 0.6
+    for layer in (pcbnew.F_SilkS, pcbnew.B_SilkS):
+        rect(xl - m, yb2 - m, xr + m, yt + m, layer)
+        for s, x, yy in (("1", xr + m + 1.2, yt), ("2", xr + m + 1.2, yb2),
+                          ("39", xl - m - 1.6, yt), ("40", xl - m - 1.6, yb2)):
+            text(s, x, yy, 1.0, SILK_W, layer)
+    text("CN2 (fitted on bottom)", (xl + xr) / 2, yb2 - m - 1.4, 1.2, SILK_W)
+    ref = fps["CN2"].Reference()
+    ref.SetLayer(pcbnew.B_SilkS); ref.SetMirrored(True)
+    ref.SetTextSize(VECTOR2I(FromMM(1.5), FromMM(1.5))); ref.SetTextThickness(FromMM(0.2))
+    ref.SetPosition(P((xl + xr) / 2, yb2 - m - 1.6))
+    return extent
+
+
+# ------------------------------------------------------------------ height check
+# Owner: ~7/8" (22.2 mm) maximum height measured from the BOTTOM of the board, i.e. about
+# 20.2 mm above the component side with the 2.0 mm board. Values are datasheet / package
+# maximum body heights above the board surface (mm).
+HEIGHT_LIMIT = 22.2 - 2.0
+HEIGHTS = {
+    "R_0805_2012Metric": 0.6, "R_1206_3216Metric": 0.7, "R_Array_Convex_4x0603": 0.6,
+    "C_0805_2012Metric": 1.45, "C_1206_3216Metric": 1.8, "L_0805_2012Metric": 1.3,
+    "LED_0805_2012Metric": 1.1, "Fuse_1206_3216Metric": 1.3, "Fuse_1812_4532Metric": 3.0,
+    "Crystal_SMD_3215-2Pin_3.2x1.5mm": 0.9, "Crystal_SMD_5032-2Pin_5.0x3.2mm": 1.3,
+    "D_SMA": 2.44, "D_SMB": 2.62, "SOT-23": 1.2, "TSOT-23-6": 1.1, "SOT-223-3_TabPin2": 1.8,
+    "SOIC-8_3.9x4.9mm_P1.27mm": 1.75, "SOIC-14_3.9x8.7mm_P1.27mm": 1.75,
+    "SOIC-16_3.9x9.9mm_P1.27mm": 1.75, "SOIC-20W_7.5x12.8mm_P1.27mm": 2.65,
+    "SOIC-16W_7.5x10.3mm_P1.27mm": 2.65,
+    "LQFP-64_10x10mm_P0.5mm": 1.6, "TO-252-4": 2.4, "TO-263-2": 4.83,
+    "L_Bourns_SRN6045TA": 4.5, "ESP32-WROOM-32": 3.35,           # V6 BOM gives 3.35 mm for the -32E
+    "PinHeader_1x05_P2.54mm_Vertical": 8.5, "PinHeader_1x06_P2.54mm_Vertical": 8.5,
+    "PinHeader_2x06_P2.54mm_Vertical": 8.5,                      # unmated; see docs/04-layout.md
+    "CP_Elec_6.3x5.4": 5.8,                                      # 5.4 body + 0.3 base (max)
+    "TestPoint_Pad_D1.5mm": 0.0, "MountingHole_4.0mm_Pad6.5": 0.0, "NPTH_4.5mm": 0.0,
+}
+HEIGHT_EXEMPT = {"CN1": "vehicle connector: height set by the housing opening (part not yet chosen)",
+                 "CN2": "bottom side, mates with the gate board"}
+
+
+def check_connector_clearance(board):
+    """Every component (pads + body, not mounting holes) must stay CONNECTOR_CLEARANCE from CN1/CN2."""
+    fps = {fp.GetReference(): fp for fp in board.GetFootprints()}
+    bad = []
+    for cn in ("CN1", "CN2"):
+        a = dbox(fps[cn])
+        for ref, fp in fps.items():
+            if ref in ("CN1", "CN2") or ref.startswith("H"):
+                continue
+            b = dbox(fp)
+            dx = max(a[0] - b[2], b[0] - a[2], 0.0); dy = max(a[1] - b[3], b[1] - a[3], 0.0)
+            d = math.hypot(dx, dy)
+            if d < CONNECTOR_CLEARANCE - 1e-6:
+                bad.append("%s is %.1f mm from %s" % (ref, d, cn))
+    return bad
+
+
+def check_heights(board):
+    rows, problems = [], []
+    for fp in board.GetFootprints():
+        ref, name = fp.GetReference(), str(fp.GetFPID().GetUniStringLibItemName())
+        if ref in HEIGHT_EXEMPT:
+            continue
+        h = HEIGHTS.get(name)
+        if h is None:
+            problems.append("%s (%s): no height on file" % (ref, name))
+        elif h > HEIGHT_LIMIT:
+            problems.append("%s (%s): %.1f mm > %.1f mm limit" % (ref, name, h, HEIGHT_LIMIT))
+        else:
+            rows.append((h, ref, name))
+    rows.sort(reverse=True)
+    return rows, problems
+
+
+# ------------------------------------------------------------------ board setup
+def setup_board(board):
+    board.SetCopperLayerCount(4)
+    ds = board.GetDesignSettings()
+    ds.SetBoardThickness(FromMM(2.0))
+    ds.m_MinClearance = FromMM(0.15)
+    ds.m_TrackMinWidth = FromMM(0.15)
+    ds.m_ViasMinSize = FromMM(0.5)
+    ds.m_MinThroughDrill = FromMM(0.3)
+    ds.m_CopperEdgeClearance = FromMM(0.4)
+
+
+# ------------------------------------------------------------------ review render
+def render(board, path, title):
+    from PIL import Image, ImageDraw, ImageFont
+    S, M = 6.0, 30
+    W, H = int((273 + 16) * S + 2 * M), int(112 * S + 2 * M + 40)
+    img = Image.new("RGB", (W, H), (20, 24, 28)); d = ImageDraw.Draw(img)
+    F = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
+    FB = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 16)
+    tx = lambda x, y: (M + (x + 16) * S, M + 40 + (107 - y) * S)
+    for dr in board.GetDrawings():
+        if dr.GetLayer() == pcbnew.Edge_Cuts:
+            if dr.GetShape() == pcbnew.SHAPE_T_SEGMENT:
+                d.line([tx(*to_design(dr.GetStart())), tx(*to_design(dr.GetEnd()))], fill=(230, 230, 230), width=2)
+            else:
+                c = to_design(dr.GetCenter()); r = ToMM(dr.GetRadius())
+                d.arc([tx(c[0] - r, c[1] + r), tx(c[0] + r, c[1] - r)], 180, 360, fill=(230, 230, 230), width=2)
+    colors = {"power": (230, 90, 70), "mcu": (90, 160, 250), "gate": (250, 200, 60), "analog": (120, 220, 120),
+              "resolver": (200, 120, 240), "can": (60, 210, 210), "vin": (240, 150, 200), "out": (250, 130, 40),
+              "wifi": (120, 200, 255), "fixed": (200, 200, 200)}
+    gof = {r: g for g, refs, _ in GROUPS for r in refs}
+    fps = {fp.GetReference(): fp for fp in board.GetFootprints()}
+    # ratsnest (nearest-neighbour chain per net, GND omitted)
+    nets = {}
+    for fp in fps.values():
+        for p in fp.Pads():
+            if p.GetNetname() and p.GetNetname() != "GND":
+                nets.setdefault(p.GetNetname(), []).append(to_design(p.GetPosition()))
+    for n, pts in nets.items():
+        rest = pts[1:]; cur = [pts[0]]
+        while rest:
+            a, b = min(((a, b) for a in cur for b in rest), key=lambda ab: math.dist(*ab))
+            d.line([tx(*a), tx(*b)], fill=(70, 80, 95), width=1); cur.append(b); rest.remove(b)
+    for ref, fp in fps.items():
+        g = gof.get(ref, "fixed"); col = colors[g]
+        x0, y0, x1, y1 = dbox(fp)
+        d.rectangle([tx(x0, y1), tx(x1, y0)], outline=col, width=1)
+        for p in fp.Pads():
+            x, y = to_design(p.GetPosition())
+            r = max(1.5, ToMM(p.GetSize().x) * S / 2)
+            d.ellipse([tx(x, y)[0] - r * 0.6, tx(x, y)[1] - r * 0.6, tx(x, y)[0] + r * 0.6, tx(x, y)[1] + r * 0.6],
+                      fill=col)
+        if fp.GetPadCount() >= 6 or ref.startswith(("Q", "J", "CN", "Y")):
+            cx, cy = tx((x0 + x1) / 2, (y0 + y1) / 2)
+            d.text((cx - 3 * len(ref), cy - 6), ref, fill=(255, 255, 255), font=F)
+    d.text((M, 8), title, fill=(255, 255, 255), font=FB)
+    lx = M + 520
+    for i, (g, c) in enumerate(colors.items()):
+        d.rectangle([lx + i * 92, 12, lx + i * 92 + 12, 24], fill=c); d.text((lx + i * 92 + 16, 11), g, fill=(220, 220, 220), font=F)
+    img.save(path)
+
+
+if __name__ == "__main__":
+    board = pcbnew.LoadBoard(PCB)
+    comps, nets = read_netlist()
+    errs = populate(board, comps, nets)
+    print("components %d, pin-nodes %d, errors %d" % (len(comps), len(nets), len(errs)))
+    for e in errs[:30]:
+        print("  " + e)
+    if errs:
+        sys.exit(1)
+    setup_board(board)
+    fails = place_all(board)
+    print("placement failures: %s" % (fails or "none"))
+    print("ratsnest (MST, signal nets): %.0f mm  [U3 rotation %s]" % (ratsnest_length(board), ANCHORS["U3"][2]))
+    if "--dry" in sys.argv:
+        render(board, os.environ.get("DRY_PNG", "/tmp/dry.png"), "dry run U3 rot %s" % ANCHORS["U3"][2])
+        sys.exit(0)
+    if fails:
+        sys.exit(1)
+    print("references moved off their own silkscreen: %s" % (", ".join(clear_own_silk(board)) or "none"))
+    print("board text block at %s" % (tuple(round(v, 1) for v in board_silk(board)),))
+    rows, problems = check_heights(board)
+    problems += ["CLEARANCE: " + b for b in check_connector_clearance(board)]
+    print("tallest parts (limit %.1f mm above the top surface): %s" % (
+        HEIGHT_LIMIT, ", ".join("%s %.1f" % (r, h) for h, r, _ in rows[:6])))
+    for pr in problems:
+        print("  HEIGHT: " + pr)
+    if problems:
+        sys.exit(1)
+    lock_fixed(board)
+    pcbnew.SaveBoard(PCB, board)
+    render(board, os.path.join(PROJ, "..", "..", "docs", "layout_placement.png"),
+           "Bolt logic board - placement v0.2a (component side, ratsnest grey, GND omitted)")
